@@ -1,0 +1,100 @@
+# ── Python ────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ── Environments ─────────────────────────────────────────────────────────
+.env
+.venv
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ── Testing ──────────────────────────────────────────────────────────────
+.tox/
+.nox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+pytestdebug.log
+
+# ── Jupyter ──────────────────────────────────────────────────────────────
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+*.ipynb
+
+# ── Data & ML ────────────────────────────────────────────────────────────
+# Only keep raw data if explicitly intended.
+# Small sample data is fine, but generated artifacts should be ignored.
+mlflow_artifacts/
+pipeline_artifacts/
+chroma_data/
+*.pkl
+*.joblib
+*.h5
+*.model
+*.onnx
+*.pb
+
+# ── Infrastructure ───────────────────────────────────────────────────────
+postgres_data/
+redis_data/
+prometheus_data/
+grafana_data/
+.docker-compose.yml.swp
+
+# ── IDE ──────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# ── OS ───────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ── Node ─────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ── Project Specific ─────────────────────────────────────────────────────
+artifacts/
+logs/
+*.log
+temp/
+tmp/
+
