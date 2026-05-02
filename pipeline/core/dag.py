@@ -1,0 +1,148 @@
+"""
+DAG Orchestrator — Async topological execution with parallelism and retry logic.
+"""
+from __future__ import annotations
+import asyncio
+import time
+from datetime import datetime
+from typing import Any, Dict, List, Set
+import structlog
+from core.event_bus import EventBus
+from core.schemas import AgentEvent, AgentStatus, PipelineResult
+
+logger = structlog.get_logger()
+
+# Agent dependency graph
+DAG = {
+    "ingestion_agent":     [],
+    "schema_agent":        ["ingestion_agent"],
+    "cleaning_agent":      ["schema_agent"],
+    "feature_agent":       ["cleaning_agent"],
+    "encoding_agent":      ["feature_agent"],
+    "anomaly_agent":       ["encoding_agent"],
+    "ml_agent":            ["encoding_agent"],       # parallel with anomaly
+    "orchestration_agent": ["anomaly_agent", "ml_agent"],
+}
+
+
+class DeadlockError(Exception):
+    pass
+
+
+class DAGOrchestrator:
+    """
+    Topological execution with parallelism where dependencies allow.
+    anomaly_agent and ml_agent run concurrently.
+    Retry logic: 3 attempts, exponential backoff (5s -> 10s -> 20s).
+    """
+
+    def __init__(self, agents: Dict[str, Any], event_bus: EventBus):
+        self.agents = agents
+        self.event_bus = event_bus
+        self.completed: Set[str] = set()
+        self.results: Dict[str, Any] = {}
+
+    async def run_pipeline(self, run_id: str) -> PipelineResult:
+        start_time = time.time()
+        started_at = datetime.utcnow()
+
+        await self.event_bus.emit(AgentEvent(
+            run_id=run_id, agent="orchestration_agent",
+            status=AgentStatus.STARTED,
+            message=f"DAG Orchestrator initialised | 8 agents | run_id={run_id}",
+            timestamp=datetime.utcnow(),
+        ))
+
+        failed_agents: List[str] = []
+
+        try:
+            while len(self.completed) < len(self.agents):
+                # Find agents whose dependencies are satisfied
+                ready = [
+                    name for name, deps in DAG.items()
+                    if name not in self.completed
+                    and name not in failed_agents
+                    and all(d in self.completed for d in deps)
+                ]
+
+                if not ready:
+                    if len(self.completed) + len(failed_agents) < len(self.agents):
+                        raise DeadlockError("No runnable agents — possible cycle or upstream failure")
+                    break
+
+                if len(ready) > 1:
+                    await self.event_bus.emit(AgentEvent(
+                        run_id=run_id, agent="orchestration_agent",
+                        status=AgentStatus.PROGRESS,
+                        message=f"Agents {', '.join(ready)} running in parallel",
+                        timestamp=datetime.utcnow(),
+                    ))
+
+                # Run ready agents concurrently
+                tasks = [self._run_with_retry(name, run_id) for name in ready]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                for name, result in zip(ready, results):
+                    if isinstance(result, Exception):
+                        failed_agents.append(name)
+                        logger.error("Agent permanently failed", agent=name, error=str(result))
+                    # Success case handled in _run_with_retry
+
+        except DeadlockError as e:
+            await self.event_bus.emit(AgentEvent(
+                run_id=run_id, agent="orchestration_agent",
+                status=AgentStatus.FAILED,
+                message=str(e), timestamp=datetime.utcnow(),
+            ))
+
+        duration_ms = int((time.time() - start_time) * 1000)
+        status = "FAILED" if failed_agents else "SUCCESS"
+
+        return PipelineResult(
+            run_id=run_id,
+            status=status,
+            started_at=started_at,
+            completed_at=datetime.utcnow(),
+            duration_ms=duration_ms,
+            agents_completed=list(self.completed),
+            agents_failed=failed_agents,
+        )
+
+    async def _run_with_retry(
+        self, agent_name: str, run_id: str,
+        max_retries: int = 3, base_delay: float = 5.0,
+    ):
+        for attempt in range(max_retries):
+            try:
+                agent = self.agents[agent_name]
+                input_data = self._build_input(agent_name)
+                result = await agent.run(input_data)
+                self.results[agent_name] = result
+                self.completed.add(agent_name)
+                return result
+            except Exception as e:
+                delay = base_delay * (2 ** attempt)
+                if attempt < max_retries - 1:
+                    await self.event_bus.emit(AgentEvent(
+                        run_id=run_id, agent=agent_name,
+                        status=AgentStatus.RETRYING,
+                        message=f"Attempt {attempt+1} failed: {e}. Retrying in {delay}s",
+                        timestamp=datetime.utcnow(),
+                    ))
+                    await asyncio.sleep(delay)
+                else:
+                    await self.event_bus.emit(AgentEvent(
+                        run_id=run_id, agent=agent_name,
+                        status=AgentStatus.FAILED,
+                        message=f"All {max_retries} attempts exhausted: {e}",
+                        timestamp=datetime.utcnow(),
+                    ))
+                    raise
+
+    def _build_input(self, agent_name: str) -> Any:
+        """Build input for an agent from previous agent results."""
+        from core.schemas import IngestionInput
+        if agent_name == "ingestion_agent":
+            return IngestionInput()
+        # All other agents receive the accumulated results dict
+        return self.results

@@ -1,0 +1,162 @@
+version: "3.9"
+
+services:
+
+  # ── Database ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ames_platform
+      POSTGRES_USER: ames
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ames -d ames_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ── Cache / Task Queue ────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # ── Experiment Tracking ───────────────────────────────────────────────────
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.11.0
+    command: >
+      sh -c "pip install psycopg2-binary && mlflow server
+        --host 0.0.0.0 --port 5000
+        --backend-store-uri postgresql://ames:${POSTGRES_PASSWORD:-changeme}@postgres/ames_platform
+        --default-artifact-root /mlflow/artifacts"
+    ports:
+      - "5001:5000"
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 15s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ── Pipeline Backend (FastAPI + WebSocket Hub + All 8 Agents) ─────────────
+  orchestration-api:
+    build:
+      context: ./pipeline
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ames:${POSTGRES_PASSWORD:-changeme}@postgres/ames_platform
+      DATABASE_URL_SYNC: postgresql://ames:${POSTGRES_PASSWORD:-changeme}@postgres/ames_platform
+      REDIS_URL: redis://redis:6379
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      REMOVE_ARTIFACTS: ${REMOVE_ARTIFACTS:-true}
+      LOG_TRANSFORM_TARGET: ${LOG_TRANSFORM_TARGET:-true}
+      ANOMALY_CONTAMINATION: ${ANOMALY_CONTAMINATION:-0.02}
+      API_KEY: ${API_KEY:-changeme}
+      FORCE_RERUN: ${FORCE_RERUN:-false}
+    volumes:
+      - ./data:/app/data:ro
+      - pipeline_artifacts:/app/artifacts
+      - chroma_data:/app/chroma
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # ── Unified Dashboard (Streamlit + React + Embedded RAG) ─────────────────
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8501"
+    environment:
+      API_URL: http://orchestration-api:8000
+      WS_URL: ws://orchestration-api:8000
+      DATABASE_URL: postgresql://ames:${POSTGRES_PASSWORD:-changeme}@postgres/ames_platform
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - ./data:/app/data:ro
+      - pipeline_artifacts:/app/artifacts
+      - chroma_data:/app/chroma
+    depends_on:
+      orchestration-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/healthz"]
+      interval: 15s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ── Observability ─────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.50.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      retries: 3
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.3.0
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/pipeline-health.json
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 15s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  mlflow_artifacts:
+  pipeline_artifacts:
+  chroma_data:
+  prometheus_data:
+  grafana_data:
