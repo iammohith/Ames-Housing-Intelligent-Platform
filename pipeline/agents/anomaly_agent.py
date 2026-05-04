@@ -2,19 +2,28 @@
 Agent 6 — Anomaly Detection Agent
 Surface statistically unusual properties for human review — never auto-remove.
 """
+
 from __future__ import annotations
+
 import os
+
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import IsolationForest
-from scipy import stats
 from agents.base_agent import BaseAgent
-from core.schemas import (
-    AgentStatus, AnomalyDetail, AnomalyOutput, AnomalyRecord, AnomalyReport, AnomalySeverity,
-)
 from core.metrics import anomalies_detected_total
+from core.schemas import (AgentStatus, AnomalyDetail, AnomalyOutput,
+                          AnomalyRecord, AnomalyReport, AnomalySeverity)
+from scipy import stats
+from sklearn.ensemble import IsolationForest
 
-ANOMALY_FEATURES = ["Gr Liv Area", "Total Bsmt SF", "Lot Area", "SalePrice", "TotalSF", "Overall Qual"]
+ANOMALY_FEATURES = [
+    "Gr Liv Area",
+    "Total Bsmt SF",
+    "Lot Area",
+    "SalePrice",
+    "TotalSF",
+    "Overall Qual",
+]
 ZSCORE_THRESHOLD = 3.5
 
 
@@ -24,7 +33,11 @@ class AnomalyAgent(BaseAgent):
 
     async def execute(self, input_data) -> AnomalyOutput:
         df: pd.DataFrame = self._get_df(input_data).copy()
-        await self.emit(AgentStatus.PROGRESS, f"Running anomaly detection on {len(df):,} properties")
+        # Retrieve preserved metadata (PID, Neighborhood) from encoding_agent
+        self._metadata_cols = self._get_metadata(input_data)
+        await self.emit(
+            AgentStatus.PROGRESS, f"Running anomaly detection on {len(df):,} properties"
+        )
 
         contamination = float(os.getenv("ANOMALY_CONTAMINATION", "0.02"))
         features_present = [f for f in ANOMALY_FEATURES if f in df.columns]
@@ -32,27 +45,38 @@ class AnomalyAgent(BaseAgent):
 
         # Isolation Forest
         iforest = IsolationForest(
-            contamination=contamination, n_estimators=200,
-            random_state=42, n_jobs=-1,
+            contamination=contamination,
+            n_estimators=200,
+            random_state=42,
+            n_jobs=-1,
         )
         iforest_preds = iforest.fit_predict(X)
         iforest_scores = iforest.decision_function(X)
         iforest_flags = set(df.index[iforest_preds == -1])
 
-        await self.emit(AgentStatus.PROGRESS, f"Isolation Forest (contamination={contamination}): {len(iforest_flags)} properties flagged")
+        await self.emit(
+            AgentStatus.PROGRESS,
+            f"Isolation Forest (contamination={contamination}): {len(iforest_flags)} properties flagged",
+        )
 
         # Z-score flagging
         z_scores = np.abs(stats.zscore(X, nan_policy="omit"))
         zscore_flag_mask = (z_scores > ZSCORE_THRESHOLD).any(axis=1)
         zscore_flags = set(df.index[zscore_flag_mask])
 
-        await self.emit(AgentStatus.PROGRESS, f"Z-score analysis (|z|>{ZSCORE_THRESHOLD}): {len(zscore_flags)} properties flagged")
+        await self.emit(
+            AgentStatus.PROGRESS,
+            f"Z-score analysis (|z|>{ZSCORE_THRESHOLD}): {len(zscore_flags)} properties flagged",
+        )
 
         # Combine results
         all_flagged = iforest_flags | zscore_flags
         both_flagged = iforest_flags & zscore_flags
 
-        await self.emit(AgentStatus.PROGRESS, f"Intersection: {len(both_flagged)} flagged by both methods (HIGH severity)")
+        await self.emit(
+            AgentStatus.PROGRESS,
+            f"Intersection: {len(both_flagged)} flagged by both methods (HIGH severity)",
+        )
 
         # Build anomaly records
         flagged_records = []
@@ -79,21 +103,38 @@ class AnomalyAgent(BaseAgent):
             for i, feat in enumerate(features_present):
                 z = float(z_scores[row_idx, i]) if row_idx < len(z_scores) else 0.0
                 anomalous_features[feat] = AnomalyDetail(
-                    feature=feat, value=float(row[feat]),
+                    feature=feat,
+                    value=float(row[feat]),
                     z_score=round(z, 3),
                     is_outlier_zscore=z > ZSCORE_THRESHOLD,
                     is_outlier_iforest=idx in iforest_flags,
                 )
 
-            pid_val = str(row.get("PID", idx))
-            neighborhood = str(row.get("Neighborhood", "Unknown"))
+            # Use preserved metadata if available (PID/Neighborhood dropped by encoding_agent)
+            if "PID" in self._metadata_cols and idx in self._metadata_cols["PID"].index:
+                pid_val = str(self._metadata_cols["PID"].loc[idx])
+            else:
+                pid_val = str(row.get("PID", idx))
+            if (
+                "Neighborhood_original" in self._metadata_cols
+                and idx in self._metadata_cols["Neighborhood_original"].index
+            ):
+                neighborhood = str(
+                    self._metadata_cols["Neighborhood_original"].loc[idx]
+                )
+            else:
+                neighborhood = str(row.get("Neighborhood", "Unknown"))
 
-            flagged_records.append(AnomalyRecord(
-                pid=pid_val, neighborhood=neighborhood,
-                methods=methods, anomalous_features=anomalous_features,
-                isolation_score=round(iso_score, 4),
-                overall_severity=severity,
-            ))
+            flagged_records.append(
+                AnomalyRecord(
+                    pid=pid_val,
+                    neighborhood=neighborhood,
+                    methods=methods,
+                    anomalous_features=anomalous_features,
+                    isolation_score=round(iso_score, 4),
+                    overall_severity=severity,
+                )
+            )
 
         # Update Prometheus gauge
         anomalies_detected_total.set(len(flagged_records))
@@ -101,7 +142,7 @@ class AnomalyAgent(BaseAgent):
         # Attach flags to DataFrame (never remove)
         df["anomaly_flagged"] = False
         df["anomaly_severity"] = "NONE"
-        
+
         for idx, record in zip(all_flagged, flagged_records):
             if idx in df.index:
                 df.at[idx, "anomaly_flagged"] = True
@@ -109,9 +150,15 @@ class AnomalyAgent(BaseAgent):
 
         self._df = df
 
-        high_count = sum(1 for r in flagged_records if r.overall_severity == AnomalySeverity.HIGH)
-        med_count = sum(1 for r in flagged_records if r.overall_severity == AnomalySeverity.MEDIUM)
-        low_count = sum(1 for r in flagged_records if r.overall_severity == AnomalySeverity.LOW)
+        high_count = sum(
+            1 for r in flagged_records if r.overall_severity == AnomalySeverity.HIGH
+        )
+        med_count = sum(
+            1 for r in flagged_records if r.overall_severity == AnomalySeverity.MEDIUM
+        )
+        low_count = sum(
+            1 for r in flagged_records if r.overall_severity == AnomalySeverity.LOW
+        )
 
         await self.emit(
             AgentStatus.PROGRESS,
@@ -138,3 +185,11 @@ class AnomalyAgent(BaseAgent):
                 if agent and hasattr(agent, "_df"):
                     return agent._df
         raise ValueError("No DataFrame from upstream agents")
+
+    def _get_metadata(self, input_data) -> dict:
+        """Retrieve preserved PID/Neighborhood metadata from encoding_agent."""
+        if isinstance(input_data, dict):
+            agent = input_data.get("encoding_agent")
+            if agent and hasattr(agent, "_metadata_cols"):
+                return agent._metadata_cols
+        return {}

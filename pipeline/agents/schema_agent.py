@@ -2,57 +2,165 @@
 Agent 2 — Schema Validation Agent
 Guarantee structural integrity before any transformation.
 """
+
 from __future__ import annotations
+
 from typing import Dict, List
+
 import pandas as pd
-from rapidfuzz import fuzz, process
 from agents.base_agent import BaseAgent
-from core.schemas import (
-    AgentStatus, ColumnInfo, ColumnType, SchemaOutput, SchemaReport,
-)
+from core.schemas import (AgentStatus, ColumnInfo, ColumnType, SchemaOutput,
+                          SchemaReport)
+from rapidfuzz import fuzz, process
 
 # Expected 82-column contract (standardized names)
 EXPECTED_COLUMNS = [
-    "Order", "PID", "MS SubClass", "MS Zoning", "Lot Frontage", "Lot Area",
-    "Street", "Alley", "Lot Shape", "Land Contour", "Utilities", "Lot Config",
-    "Land Slope", "Neighborhood", "Condition 1", "Condition 2", "Bldg Type",
-    "House Style", "Overall Qual", "Overall Cond", "Year Built", "Year Remod/Add",
-    "Roof Style", "Roof Matl", "Exterior 1st", "Exterior 2nd", "Mas Vnr Type",
-    "Mas Vnr Area", "Exter Qual", "Exter Cond", "Foundation", "Bsmt Qual",
-    "Bsmt Cond", "Bsmt Exposure", "BsmtFin Type 1", "BsmtFin SF 1",
-    "BsmtFin Type 2", "BsmtFin SF 2", "Bsmt Unf SF", "Total Bsmt SF",
-    "Heating", "Heating QC", "Central Air", "Electrical", "1st Flr SF",
-    "2nd Flr SF", "Low Qual Fin SF", "Gr Liv Area", "Bsmt Full Bath",
-    "Bsmt Half Bath", "Full Bath", "Half Bath", "Bedroom AbvGr",
-    "Kitchen AbvGr", "Kitchen Qual", "TotRms AbvGrd", "Functional",
-    "Fireplaces", "Fireplace Qu", "Garage Type", "Garage Yr Blt",
-    "Garage Finish", "Garage Cars", "Garage Area", "Garage Qual",
-    "Garage Cond", "Paved Drive", "Wood Deck SF", "Open Porch SF",
-    "Enclosed Porch", "3Ssn Porch", "Screen Porch", "Pool Area", "Pool QC",
-    "Fence", "Misc Feature", "Misc Val", "Mo Sold", "Yr Sold",
-    "Sale Type", "Sale Condition", "SalePrice",
+    "Order",
+    "PID",
+    "MS SubClass",
+    "MS Zoning",
+    "Lot Frontage",
+    "Lot Area",
+    "Street",
+    "Alley",
+    "Lot Shape",
+    "Land Contour",
+    "Utilities",
+    "Lot Config",
+    "Land Slope",
+    "Neighborhood",
+    "Condition 1",
+    "Condition 2",
+    "Bldg Type",
+    "House Style",
+    "Overall Qual",
+    "Overall Cond",
+    "Year Built",
+    "Year Remod/Add",
+    "Roof Style",
+    "Roof Matl",
+    "Exterior 1st",
+    "Exterior 2nd",
+    "Mas Vnr Type",
+    "Mas Vnr Area",
+    "Exter Qual",
+    "Exter Cond",
+    "Foundation",
+    "Bsmt Qual",
+    "Bsmt Cond",
+    "Bsmt Exposure",
+    "BsmtFin Type 1",
+    "BsmtFin SF 1",
+    "BsmtFin Type 2",
+    "BsmtFin SF 2",
+    "Bsmt Unf SF",
+    "Total Bsmt SF",
+    "Heating",
+    "Heating QC",
+    "Central Air",
+    "Electrical",
+    "1st Flr SF",
+    "2nd Flr SF",
+    "Low Qual Fin SF",
+    "Gr Liv Area",
+    "Bsmt Full Bath",
+    "Bsmt Half Bath",
+    "Full Bath",
+    "Half Bath",
+    "Bedroom AbvGr",
+    "Kitchen AbvGr",
+    "Kitchen Qual",
+    "TotRms AbvGrd",
+    "Functional",
+    "Fireplaces",
+    "Fireplace Qu",
+    "Garage Type",
+    "Garage Yr Blt",
+    "Garage Finish",
+    "Garage Cars",
+    "Garage Area",
+    "Garage Qual",
+    "Garage Cond",
+    "Paved Drive",
+    "Wood Deck SF",
+    "Open Porch SF",
+    "Enclosed Porch",
+    "3Ssn Porch",
+    "Screen Porch",
+    "Pool Area",
+    "Pool QC",
+    "Fence",
+    "Misc Feature",
+    "Misc Val",
+    "Mo Sold",
+    "Yr Sold",
+    "Sale Type",
+    "Sale Condition",
+    "SalePrice",
 ]
 
 NUMERIC_CONTINUOUS = {
-    "Lot Frontage", "Lot Area", "Mas Vnr Area", "BsmtFin SF 1", "BsmtFin SF 2",
-    "Bsmt Unf SF", "Total Bsmt SF", "1st Flr SF", "2nd Flr SF", "Low Qual Fin SF",
-    "Gr Liv Area", "Garage Area", "Wood Deck SF", "Open Porch SF",
-    "Enclosed Porch", "3Ssn Porch", "Screen Porch", "Pool Area", "Misc Val",
+    "Lot Frontage",
+    "Lot Area",
+    "Mas Vnr Area",
+    "BsmtFin SF 1",
+    "BsmtFin SF 2",
+    "Bsmt Unf SF",
+    "Total Bsmt SF",
+    "1st Flr SF",
+    "2nd Flr SF",
+    "Low Qual Fin SF",
+    "Gr Liv Area",
+    "Garage Area",
+    "Wood Deck SF",
+    "Open Porch SF",
+    "Enclosed Porch",
+    "3Ssn Porch",
+    "Screen Porch",
+    "Pool Area",
+    "Misc Val",
     "SalePrice",
 }
 
 NUMERIC_DISCRETE = {
-    "Order", "MS SubClass", "Overall Qual", "Overall Cond", "Year Built",
-    "Year Remod/Add", "Bsmt Full Bath", "Bsmt Half Bath", "Full Bath",
-    "Half Bath", "Bedroom AbvGr", "Kitchen AbvGr", "TotRms AbvGrd",
-    "Fireplaces", "Garage Yr Blt", "Garage Cars", "Mo Sold", "Yr Sold",
+    "Order",
+    "MS SubClass",
+    "Overall Qual",
+    "Overall Cond",
+    "Year Built",
+    "Year Remod/Add",
+    "Bsmt Full Bath",
+    "Bsmt Half Bath",
+    "Full Bath",
+    "Half Bath",
+    "Bedroom AbvGr",
+    "Kitchen AbvGr",
+    "TotRms AbvGrd",
+    "Fireplaces",
+    "Garage Yr Blt",
+    "Garage Cars",
+    "Mo Sold",
+    "Yr Sold",
 }
 
 ORDINAL_CATEGORICAL = {
-    "Exter Qual", "Exter Cond", "Bsmt Qual", "Bsmt Cond", "Bsmt Exposure",
-    "BsmtFin Type 1", "BsmtFin Type 2", "Heating QC", "Kitchen Qual",
-    "Fireplace Qu", "Garage Finish", "Garage Qual", "Garage Cond",
-    "Pool QC", "Land Slope", "Functional", "Paved Drive",
+    "Exter Qual",
+    "Exter Cond",
+    "Bsmt Qual",
+    "Bsmt Cond",
+    "Bsmt Exposure",
+    "BsmtFin Type 1",
+    "BsmtFin Type 2",
+    "Heating QC",
+    "Kitchen Qual",
+    "Fireplace Qu",
+    "Garage Finish",
+    "Garage Qual",
+    "Garage Cond",
+    "Pool QC",
+    "Land Slope",
+    "Functional",
+    "Paved Drive",
 }
 
 STRUCTURAL_NA_THRESHOLD = 0.40
@@ -65,7 +173,9 @@ class SchemaAgent(BaseAgent):
     async def execute(self, input_data) -> SchemaOutput:
         df: pd.DataFrame = self._get_df(input_data)
 
-        await self.emit(AgentStatus.PROGRESS, f"Validating {len(df.columns)}-column schema contract")
+        await self.emit(
+            AgentStatus.PROGRESS, f"Validating {len(df.columns)}-column schema contract"
+        )
 
         # Fuzzy match column names
         column_name_map = self._fuzzy_match_columns(list(df.columns))
@@ -102,11 +212,16 @@ class SchemaAgent(BaseAgent):
                 num_nominal += 1
 
             column_type_map[col] = ctype
-            columns_info.append(ColumnInfo(
-                name=col, matched_name=matched, data_type=ctype,
-                null_rate=round(null_rate, 4), unique_count=unique_count,
-                is_structural_na=is_structural_na,
-            ))
+            columns_info.append(
+                ColumnInfo(
+                    name=col,
+                    matched_name=matched,
+                    data_type=ctype,
+                    null_rate=round(null_rate, 4),
+                    unique_count=unique_count,
+                    is_structural_na=is_structural_na,
+                )
+            )
 
         await self.emit(
             AgentStatus.PROGRESS,
@@ -132,7 +247,8 @@ class SchemaAgent(BaseAgent):
         # Compute confidence score
         total_cells = len(df) * len(df.columns)
         unexpected_nulls = sum(
-            df[col].isnull().sum() for col in df.columns
+            df[col].isnull().sum()
+            for col in df.columns
             if col not in structural_na_candidates
         )
         confidence = 1.0 - (unexpected_nulls / total_cells) if total_cells > 0 else 0.0
@@ -168,7 +284,9 @@ class SchemaAgent(BaseAgent):
         """Map actual column names to expected names using fuzzy matching."""
         mapping = {}
         for col in actual_cols:
-            match, score, _ = process.extractOne(col, EXPECTED_COLUMNS, scorer=fuzz.ratio)
+            match, score, _ = process.extractOne(
+                col, EXPECTED_COLUMNS, scorer=fuzz.ratio
+            )
             if score > 80:
                 mapping[col] = match
             else:

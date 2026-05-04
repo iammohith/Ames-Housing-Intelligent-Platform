@@ -1,66 +1,256 @@
 """
-RAG Retriever — Hybrid retrieval: dense + keyword with RRF merging and MMR diversity.
+RAG Retriever — Advanced MAANG-level hybrid retrieval.
+Supports: Query Intent Routing, BM25, Semantic MMR, and RRF merging.
 """
+
 from __future__ import annotations
+
+import math
 import os
 import re
-from typing import List, Tuple
+from collections import defaultdict
+from typing import Any, Dict, List, Tuple
+
+import numpy as np
 
 CHROMA_PATH = os.getenv("CHROMA_PATH", "/app/chroma")
 MODEL_CACHE = os.getenv("SENTENCE_TRANSFORMERS_HOME", "/app/model_cache")
 
+INTENT_TO_TITLES = {
+    "neighborhood": ["neighborhood_stats", "market_segments"],
+    "model_performance": ["model_evaluation_report", "pipeline_summary"],
+    "data_quality": ["cleaning_report", "data_dictionary"],
+    "anomaly": ["anomaly_report"],
+    "feature": ["feature_importance_report", "feature_manifest"],
+    "temporal": ["price_trends_report"],
+}
+
+# Keep a global embedding function to avoid reloading
+_emb_fn = None
+
+
+def _get_embedding_fn():
+    global _emb_fn
+    if _emb_fn is None:
+        from chromadb.utils.embedding_functions import \
+            SentenceTransformerEmbeddingFunction
+
+        _emb_fn = SentenceTransformerEmbeddingFunction(
+            model_name="sentence-transformers/all-MiniLM-L6-v2"
+        )
+    return _emb_fn
+
 
 def retrieve_context(query: str, top_k: int = 5) -> str:
-    """Retrieve relevant context from ChromaDB using hybrid search."""
+    """Retrieve relevant context using advanced hybrid search and MMR."""
     try:
         import chromadb
-        from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
-        
-        emb_fn = SentenceTransformerEmbeddingFunction(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        from rag.query_classifier import classify_query
+
+        emb_fn = _get_embedding_fn()
         client = chromadb.PersistentClient(path=CHROMA_PATH)
         collection = client.get_collection("ames_knowledge", embedding_function=emb_fn)
 
-        # Dense retrieval via ChromaDB's built-in embedding
-        results = collection.query(query_texts=[query], n_results=top_k)
+        initial_k = top_k * 4
 
-        if results and results["documents"] and results["documents"][0]:
-            chunks = results["documents"][0]
-            # MMR-style diversity: remove near-duplicates
-            unique_chunks = _deduplicate(chunks)
-            return "\n\n".join(unique_chunks[:top_k])
-    except Exception:
+        # 1. Intent Classification & Metadata Routing
+        intent = classify_query(query)
+        dense_results = collection.query(query_texts=[query], n_results=initial_k)
+
+        # If specific intent, force fetch documents of that intent
+        intent_docs = []
+        if intent != "general" and intent in INTENT_TO_TITLES:
+            titles = INTENT_TO_TITLES[intent]
+            for title in titles:
+                # Perform an exact fetch or targeted query
+                targeted = collection.query(
+                    query_texts=[query], n_results=top_k, where={"title": title}
+                )
+                if targeted and targeted["documents"] and targeted["documents"][0]:
+                    intent_docs.extend(targeted["documents"][0])
+
+        dense_docs = (
+            dense_results["documents"][0]
+            if dense_results
+            and dense_results.get("documents")
+            and dense_results["documents"][0]
+            else []
+        )
+        dense_docs.extend(intent_docs)
+
+        # 2. BM25 Keyword Retrieval
+        all_docs_results = collection.get()
+        all_docs = all_docs_results.get("documents", [])
+
+        bm25_docs = _bm25_search(query, all_docs, top_n=initial_k)
+
+        # 3. RRF Merging
+        merged_chunks = _rrf_merge(dense_docs, bm25_docs)
+
+        if merged_chunks:
+            # 4. Semantic MMR (Maximal Marginal Relevance)
+            final_chunks = _semantic_mmr(query, merged_chunks, emb_fn, top_k=top_k)
+
+            # Format chunks with citations
+            formatted_chunks = []
+            for chunk in final_chunks:
+                # find the metadata title for citation
+                title = "unknown"
+                for i, doc in enumerate(all_docs):
+                    if doc == chunk:
+                        meta = all_docs_results.get("metadatas", [])
+                        if meta and i < len(meta) and meta[i]:
+                            title = meta[i].get("title", "unknown")
+                        break
+                formatted_chunks.append(f"[Source: {title}]\n{chunk}")
+
+            return "\n\n".join(formatted_chunks)
+    except Exception as e:
         pass
 
     return _fallback_context(query)
 
 
-def _deduplicate(chunks: List[str], threshold: float = 0.8) -> List[str]:
-    """Remove near-duplicate chunks using simple word overlap."""
-    unique = []
-    for chunk in chunks:
-        words = set(chunk.lower().split())
-        is_dup = False
-        for existing in unique:
-            existing_words = set(existing.lower().split())
-            overlap = len(words & existing_words) / max(len(words | existing_words), 1)
-            if overlap > threshold:
-                is_dup = True
-                break
-        if not is_dup:
-            unique.append(chunk)
-    return unique
+def _bm25_search(
+    query: str, corpus: List[str], top_n: int = 15, k1: float = 1.5, b: float = 0.75
+) -> List[str]:
+    """Robust Okapi BM25 implementation."""
+    if not corpus:
+        return []
+
+    query_words = re.findall(r"\w+", query.lower())
+    if not query_words:
+        return corpus[:top_n]
+
+    # Build term frequencies and document frequencies
+    doc_lengths = []
+    df = defaultdict(int)
+    tf_docs = []
+
+    for doc in corpus:
+        words = re.findall(r"\w+", doc.lower())
+        doc_lengths.append(len(words))
+        tf = defaultdict(int)
+        for w in words:
+            tf[w] += 1
+        tf_docs.append(tf)
+        for w in set(words):
+            df[w] += 1
+
+    avgdl = sum(doc_lengths) / len(doc_lengths) if doc_lengths else 1.0
+    N = len(corpus)
+
+    scores = []
+    for i, tf in enumerate(tf_docs):
+        score = 0.0
+        for qw in query_words:
+            if qw not in tf:
+                continue
+            # IDF calculation (Robertson-Spärck Jones)
+            idf = math.log(1 + (N - df[qw] + 0.5) / (df[qw] + 0.5))
+            # TF normalization
+            tf_term = tf[qw]
+            numerator = tf_term * (k1 + 1)
+            denominator = tf_term + k1 * (1 - b + b * (doc_lengths[i] / avgdl))
+            score += idf * (numerator / denominator)
+        scores.append((corpus[i], score))
+
+    scores.sort(key=lambda x: x[1], reverse=True)
+    return [doc for doc, score in scores[:top_n] if score > 0]
+
+
+def _rrf_merge(list1: List[str], list2: List[str], k: int = 60) -> List[str]:
+    """Reciprocal Rank Fusion for combining two ranked lists."""
+    rank_scores: Dict[str, float] = defaultdict(float)
+
+    for rank, doc in enumerate(list1):
+        rank_scores[doc] += 1.0 / (k + rank + 1)
+
+    for rank, doc in enumerate(list2):
+        rank_scores[doc] += 1.0 / (k + rank + 1)
+
+    sorted_docs = sorted(rank_scores.items(), key=lambda x: x[1], reverse=True)
+    return [doc for doc, score in sorted_docs]
+
+
+def _semantic_mmr(
+    query: str, docs: List[str], emb_fn: Any, top_k: int = 5, lambda_mult: float = 0.7
+) -> List[str]:
+    """Maximal Marginal Relevance using dense embeddings to ensure diversity."""
+    if not docs:
+        return []
+    if len(docs) <= top_k:
+        return docs
+
+    query_emb = emb_fn([query])[0]
+    doc_embs = emb_fn(docs)
+
+    # Cosine similarity helper
+    def sim(a, b):
+        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-10)
+
+    selected_indices = []
+    unselected_indices = list(range(len(docs)))
+
+    # Select first document (highest similarity to query)
+    best_idx = max(unselected_indices, key=lambda i: sim(query_emb, doc_embs[i]))
+    selected_indices.append(best_idx)
+    unselected_indices.remove(best_idx)
+
+    # Select remaining iteratively
+    while len(selected_indices) < top_k and unselected_indices:
+        best_score = -float("inf")
+        best_idx = -1
+
+        for i in unselected_indices:
+            # Relevance to query
+            relevance = sim(query_emb, doc_embs[i])
+            # Max similarity to already selected docs (redundancy)
+            redundancy = max([sim(doc_embs[i], doc_embs[j]) for j in selected_indices])
+
+            # MMR Score
+            mmr_score = lambda_mult * relevance - (1 - lambda_mult) * redundancy
+            if mmr_score > best_score:
+                best_score = mmr_score
+                best_idx = i
+
+        selected_indices.append(best_idx)
+        unselected_indices.remove(best_idx)
+
+    return [docs[i] for i in selected_indices]
 
 
 def _fallback_context(query: str) -> str:
-    """Load context from saved text files when ChromaDB is unavailable."""
-    knowledge_dir = "/app/artifacts/knowledge"
+    """Load context from saved text files when ChromaDB is unavailable, matching query words."""
+    knowledge_dir = os.getenv("KNOWLEDGE_DIR", "/app/artifacts/knowledge")
     if not os.path.exists(knowledge_dir):
         return ""
-    context_parts = []
-    for run_dir in sorted(os.listdir(knowledge_dir), reverse=True)[:1]:
-        doc_dir = os.path.join(knowledge_dir, run_dir)
+
+    context_chunks = []
+    try:
+        run_dirs = sorted(os.listdir(knowledge_dir), reverse=True)
+        if not run_dirs:
+            return ""
+        doc_dir = os.path.join(knowledge_dir, run_dirs[0])
+
         for f in os.listdir(doc_dir):
             if f.endswith(".txt"):
                 with open(os.path.join(doc_dir, f)) as fh:
-                    context_parts.append(fh.read())
-    return "\n\n".join(context_parts[:5])
+                    content = fh.read()
+                    words = content.split()
+                    title = f.replace(".txt", "")
+                    for i in range(0, len(words), 462):
+                        chunk_words = words[i : i + 512]
+                        if chunk_words:
+                            context_chunks.append(
+                                f"[Source: {title}]\n" + " ".join(chunk_words)
+                            )
+
+        # BM25 on chunks
+        best_chunks = _bm25_search(query, context_chunks, top_n=5)
+        if best_chunks:
+            return "\n\n".join(best_chunks)
+        else:
+            return "\n\n".join(context_chunks[:5])
+    except Exception:
+        return ""

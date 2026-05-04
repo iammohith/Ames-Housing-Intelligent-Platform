@@ -1,9 +1,12 @@
 """
 API Middleware — Auth and rate limiting.
 """
+
 from __future__ import annotations
+
 import os
-from fastapi import Request, HTTPException, Security
+
+from fastapi import HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)

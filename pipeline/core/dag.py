@@ -1,11 +1,14 @@
 """
 DAG Orchestrator — Async topological execution with parallelism and retry logic.
 """
+
 from __future__ import annotations
+
 import asyncio
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Set
+
 import structlog
 from core.event_bus import EventBus
 from core.schemas import AgentEvent, AgentStatus, PipelineResult
@@ -14,13 +17,13 @@ logger = structlog.get_logger()
 
 # Agent dependency graph
 DAG = {
-    "ingestion_agent":     [],
-    "schema_agent":        ["ingestion_agent"],
-    "cleaning_agent":      ["schema_agent"],
-    "feature_agent":       ["cleaning_agent"],
-    "encoding_agent":      ["feature_agent"],
-    "anomaly_agent":       ["encoding_agent"],
-    "ml_agent":            ["encoding_agent"],       # parallel with anomaly
+    "ingestion_agent": [],
+    "schema_agent": ["ingestion_agent"],
+    "cleaning_agent": ["schema_agent"],
+    "feature_agent": ["cleaning_agent"],
+    "encoding_agent": ["feature_agent"],
+    "anomaly_agent": ["encoding_agent"],
+    "ml_agent": ["encoding_agent"],  # parallel with anomaly
     "orchestration_agent": ["anomaly_agent", "ml_agent"],
 }
 
@@ -46,12 +49,15 @@ class DAGOrchestrator:
         start_time = time.time()
         started_at = datetime.utcnow()
 
-        await self.event_bus.emit(AgentEvent(
-            run_id=run_id, agent="orchestration_agent",
-            status=AgentStatus.STARTED,
-            message=f"DAG Orchestrator initialised | 8 agents | run_id={run_id}",
-            timestamp=datetime.utcnow(),
-        ))
+        await self.event_bus.emit(
+            AgentEvent(
+                run_id=run_id,
+                agent="orchestration_agent",
+                status=AgentStatus.STARTED,
+                message=f"DAG Orchestrator initialised | 8 agents | run_id={run_id}",
+                timestamp=datetime.utcnow(),
+            )
+        )
 
         failed_agents: List[str] = []
         pending_tasks: Set[asyncio.Task] = set()
@@ -61,7 +67,8 @@ class DAGOrchestrator:
             while len(self.completed) < len(self.agents):
                 # Find agents whose dependencies are satisfied
                 ready = [
-                    name for name, deps in DAG.items()
+                    name
+                    for name, deps in DAG.items()
                     if name not in self.completed
                     and name not in failed_agents
                     and name not in running_agents
@@ -70,16 +77,21 @@ class DAGOrchestrator:
 
                 if not ready and not pending_tasks:
                     if len(self.completed) + len(failed_agents) < len(self.agents):
-                        raise DeadlockError("No runnable agents — possible cycle or upstream failure")
+                        raise DeadlockError(
+                            "No runnable agents — possible cycle or upstream failure"
+                        )
                     break
 
                 if len(ready) > 1:
-                    await self.event_bus.emit(AgentEvent(
-                        run_id=run_id, agent="orchestration_agent",
-                        status=AgentStatus.PROGRESS,
-                        message=f"Agents {', '.join(ready)} running in parallel",
-                        timestamp=datetime.utcnow(),
-                    ))
+                    await self.event_bus.emit(
+                        AgentEvent(
+                            run_id=run_id,
+                            agent="orchestration_agent",
+                            status=AgentStatus.PROGRESS,
+                            message=f"Agents {', '.join(ready)} running in parallel",
+                            timestamp=datetime.utcnow(),
+                        )
+                    )
 
                 # Run ready agents
                 for name in ready:
@@ -93,23 +105,29 @@ class DAGOrchestrator:
                     done, pending_tasks = await asyncio.wait(
                         pending_tasks, return_when=asyncio.FIRST_COMPLETED
                     )
-                    
+
                     for task in done:
                         name = task.get_name()
                         running_agents.remove(name)
-                        
+
                         try:
                             task.result()  # Will raise if agent failed permanently
                         except Exception as e:
                             failed_agents.append(name)
-                            logger.error("Agent permanently failed", agent=name, error=str(e))
+                            logger.error(
+                                "Agent permanently failed", agent=name, error=str(e)
+                            )
 
         except DeadlockError as e:
-            await self.event_bus.emit(AgentEvent(
-                run_id=run_id, agent="orchestration_agent",
-                status=AgentStatus.FAILED,
-                message=str(e), timestamp=datetime.utcnow(),
-            ))
+            await self.event_bus.emit(
+                AgentEvent(
+                    run_id=run_id,
+                    agent="orchestration_agent",
+                    status=AgentStatus.FAILED,
+                    message=str(e),
+                    timestamp=datetime.utcnow(),
+                )
+            )
 
         duration_ms = int((time.time() - start_time) * 1000)
         status = "FAILED" if failed_agents else "SUCCESS"
@@ -128,8 +146,11 @@ class DAGOrchestrator:
         )
 
     async def _run_with_retry(
-        self, agent_name: str, run_id: str,
-        max_retries: int = 3, base_delay: float = 5.0,
+        self,
+        agent_name: str,
+        run_id: str,
+        max_retries: int = 3,
+        base_delay: float = 5.0,
     ):
         for attempt in range(max_retries):
             try:
@@ -140,30 +161,49 @@ class DAGOrchestrator:
                 self.completed.add(agent_name)
                 return result
             except Exception as e:
-                delay = base_delay * (2 ** attempt)
+                delay = base_delay * (2**attempt)
                 if attempt < max_retries - 1:
-                    await self.event_bus.emit(AgentEvent(
-                        run_id=run_id, agent=agent_name,
-                        status=AgentStatus.RETRYING,
-                        message=f"Attempt {attempt+1} failed: {e}. Retrying in {delay}s",
-                        timestamp=datetime.utcnow(),
-                    ))
+                    await self.event_bus.emit(
+                        AgentEvent(
+                            run_id=run_id,
+                            agent=agent_name,
+                            status=AgentStatus.RETRYING,
+                            message=f"Attempt {attempt+1} failed: {e}. Retrying in {delay}s",
+                            timestamp=datetime.utcnow(),
+                        )
+                    )
                     await asyncio.sleep(delay)
                 else:
-                    await self.event_bus.emit(AgentEvent(
-                        run_id=run_id, agent=agent_name,
-                        status=AgentStatus.FAILED,
-                        message=f"All {max_retries} attempts exhausted: {e}",
-                        timestamp=datetime.utcnow(),
-                    ))
+                    await self.event_bus.emit(
+                        AgentEvent(
+                            run_id=run_id,
+                            agent=agent_name,
+                            status=AgentStatus.FAILED,
+                            message=f"All {max_retries} attempts exhausted: {e}",
+                            timestamp=datetime.utcnow(),
+                        )
+                    )
                     raise
 
     def _build_input(self, agent_name: str) -> Any:
-        """Build input for an agent from previous agent results."""
+        """Build input for an agent from previous agent results.
+
+        Data flow pattern:
+        - ingestion_agent: receives IngestionInput (CSV path, expected shape)
+        - orchestration_agent: receives self.results dict (Pydantic model outputs)
+          so it can read structured fields like .anomaly_report, .best_model_name
+        - All other agents: receive self.agents dict (agent instances).
+          Each agent's _get_df() traverses this dict to find the upstream agent
+          whose _df attribute was set during its execute() call.
+          This is a mutable shared-state pattern — agent instances persist
+          across the pipeline run and accumulate state (e.g., _df, _metadata_cols).
+        """
         from core.schemas import IngestionInput
+
         if agent_name == "ingestion_agent":
             return IngestionInput()
         if agent_name == "orchestration_agent":
             return self.results
-        # All other agents receive the accumulated agents dictionary
+        # All other agents receive the agent instances dict.
+        # Each agent's _get_df() finds the right upstream agent's _df.
         return self.agents

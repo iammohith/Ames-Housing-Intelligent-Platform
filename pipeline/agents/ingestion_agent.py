@@ -2,10 +2,13 @@
 Agent 1 — Ingestion Agent
 Verify the raw file matches its contract before any byte is processed.
 """
+
 from __future__ import annotations
+
 import hashlib
 import os
 from datetime import datetime
+
 import chardet
 import pandas as pd
 from agents.base_agent import BaseAgent
@@ -97,6 +100,7 @@ class IngestionAgent(BaseAgent[IngestionInput, IngestionOutput]):
             return False
         try:
             import psycopg2
+
             conn = psycopg2.connect(db_url)
             cur = conn.cursor()
             cur.execute(

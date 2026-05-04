@@ -1,10 +1,15 @@
 """Tests for Ingestion Agent."""
-import pytest
+
 import hashlib
+
+import pytest
+
 
 @pytest.mark.asyncio
 async def test_ingestion_reads_csv(sample_csv_path, mock_event_bus, run_id):
-    import sys, os
+    import os
+    import sys
+
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "pipeline"))
     from agents.ingestion_agent import IngestionAgent
     from core.schemas import IngestionInput
@@ -18,6 +23,7 @@ async def test_ingestion_reads_csv(sample_csv_path, mock_event_bus, run_id):
     assert result.file_size_bytes > 0
     assert result.encoding_detected is not None
 
+
 @pytest.mark.asyncio
 async def test_ingestion_hash_deterministic(sample_csv_path, mock_event_bus, run_id):
     from agents.ingestion_agent import IngestionAgent
@@ -30,6 +36,7 @@ async def test_ingestion_hash_deterministic(sample_csv_path, mock_event_bus, run
     r2 = await agent2.execute(IngestionInput(csv_path=sample_csv_path))
 
     assert r1.dataset_hash == r2.dataset_hash
+
 
 @pytest.mark.asyncio
 async def test_ingestion_rejects_wrong_shape(tmp_path, mock_event_bus, run_id):

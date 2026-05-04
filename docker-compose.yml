@@ -35,10 +35,7 @@ services:
   mlflow:
     image: ghcr.io/mlflow/mlflow:v2.11.0
     command: >
-      sh -c "pip install psycopg2-binary && mlflow server
-        --host 0.0.0.0 --port 5000
-        --backend-store-uri postgresql://ames:${POSTGRES_PASSWORD:-changeme}@postgres/ames_platform
-        --default-artifact-root /mlflow/artifacts"
+      sh -c "pip install psycopg2-binary && mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri postgresql://ames:${POSTGRES_PASSWORD:-changeme}@postgres/ames_platform --default-artifact-root /mlflow/artifacts"
     ports:
       - "5001:5000"
     volumes:
@@ -100,6 +97,7 @@ services:
       WS_URL: ws://orchestration-api:8000
       DATABASE_URL: postgresql://ames:${POSTGRES_PASSWORD:-changeme}@postgres/ames_platform
       REDIS_URL: redis://redis:6379
+      API_KEY: ${API_KEY:-changeme}
     volumes:
       - ./data:/app/data:ro
       - pipeline_artifacts:/app/artifacts
@@ -140,12 +138,16 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/pipeline-health.json
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 15s

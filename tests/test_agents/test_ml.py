@@ -1,19 +1,25 @@
 """Tests for ML Training Agent."""
-import pytest
+
 import numpy as np
+import pytest
+
 
 @pytest.mark.asyncio
 async def test_ml_trains_three_models(sample_df, mock_event_bus, run_id):
-    import sys, os
+    import os
+    import sys
+
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "pipeline"))
-    from agents.cleaning_agent import CleaningAgent
-    from agents.feature_agent import FeatureAgent
-    from agents.encoding_agent import EncodingAgent
-    from agents.ml_agent import MLAgent
     from unittest.mock import MagicMock
 
+    from agents.cleaning_agent import CleaningAgent
+    from agents.encoding_agent import EncodingAgent
+    from agents.feature_agent import FeatureAgent
+    from agents.ml_agent import MLAgent
+
     # Build pipeline
-    mock_up = MagicMock(); mock_up._df = sample_df
+    mock_up = MagicMock()
+    mock_up._df = sample_df
     clean = CleaningAgent(mock_event_bus, run_id)
     await clean.execute({"ingestion_agent": mock_up})
     feat = FeatureAgent(mock_event_bus, run_id)

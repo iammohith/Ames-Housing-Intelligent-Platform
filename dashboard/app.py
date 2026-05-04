@@ -1,6 +1,7 @@
 """
 Ames Housing Intelligence Platform — Streamlit Multi-Page Dashboard
 """
+
 import streamlit as st
 
 st.set_page_config(
@@ -14,7 +15,8 @@ st.set_page_config(
 )
 
 # Premium Light Theme CSS
-st.markdown("""
+st.markdown(
+    """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
 
@@ -139,7 +141,9 @@ st.markdown("""
         box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # Sidebar
 with st.sidebar:
@@ -180,8 +184,10 @@ with col3:
     st.markdown("""
     ### 🤖 AI Insights
     Ask questions about the dataset in plain English.
-    Powered by flan-t5-small RAG — fully offline.
+    Powered by flan-t5-base RAG — fully offline.
     """)
 
 st.markdown("---")
-st.markdown("**Select a page from the sidebar to begin.** Use `▶ RUN PIPELINE` on the Pipeline Monitor page to start processing.")
+st.markdown(
+    "**Select a page from the sidebar to begin.** Use `▶ RUN PIPELINE` on the Pipeline Monitor page to start processing."
+)

@@ -9,7 +9,7 @@
   "links": [],
   "panels": [
     {
-      "title": "Pipeline Runs \u2014 Success vs Failure",
+      "title": "Pipeline Runs \u2014 Success vs Failure (24h)",
       "type": "stat",
       "gridPos": {
         "h": 6,
@@ -23,7 +23,7 @@
       },
       "targets": [
         {
-          "expr": "pipeline_runs_total{status=\"success\"}",
+          "expr": "sum(increase(pipeline_runs_total{status=\"success\"}[24h]))",
           "legendFormat": "Success",
           "refId": "A",
           "datasource": {
@@ -32,7 +32,7 @@
           }
         },
         {
-          "expr": "pipeline_runs_total{status=\"failure\"}",
+          "expr": "sum(increase(pipeline_runs_total{status=\"failure\"}[24h]))",
           "legendFormat": "Failure",
           "refId": "B",
           "datasource": {
@@ -108,7 +108,7 @@
       "options": {}
     },
     {
-      "title": "Agent Runs \u2014 Total by Status",
+      "title": "Agent Runs \u2014 Total by Status (24h)",
       "type": "barchart",
       "gridPos": {
         "h": 8,
@@ -122,7 +122,7 @@
       },
       "targets": [
         {
-          "expr": "agent_runs_total",
+          "expr": "sum by (agent_name, status) (increase(agent_runs_total[24h]))",
           "legendFormat": "{{agent_name}} \u2014 {{status}}",
           "refId": "A",
           "datasource": {

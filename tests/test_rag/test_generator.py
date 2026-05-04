@@ -1,9 +1,12 @@
 """Tests for RAG Generator."""
+
 import pytest
 
 
 def test_extractive_fallback():
-    import sys, os
+    import os
+    import sys
+
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "dashboard"))
     from rag.generator import _extractive_fallback
 
@@ -17,15 +20,18 @@ def test_grounding_score():
 
     score = compute_grounding_score(
         "Overall Quality is the top feature",
-        "The top feature influencing house prices is Overall Quality"
+        "The top feature influencing house prices is Overall Quality",
     )
     assert score > 0.5
 
-    zero_score = compute_grounding_score("completely unrelated words xyz", "context about housing")
+    zero_score = compute_grounding_score(
+        "completely unrelated words xyz", "context about housing"
+    )
     assert zero_score < 0.5
 
 
 def test_grounding_score_empty():
     from rag.generator import compute_grounding_score
+
     assert compute_grounding_score("", "context") == 0.0
     assert compute_grounding_score("answer", "") == 0.0

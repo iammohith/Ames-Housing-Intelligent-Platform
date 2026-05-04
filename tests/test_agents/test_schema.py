@@ -1,12 +1,17 @@
 """Tests for Schema Validation Agent."""
+
 import pytest
+
 
 @pytest.mark.asyncio
 async def test_schema_validates_columns(sample_df, mock_event_bus, run_id):
-    import sys, os
+    import os
+    import sys
+
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "pipeline"))
-    from agents.schema_agent import SchemaAgent
     from unittest.mock import MagicMock
+
+    from agents.schema_agent import SchemaAgent
 
     agent = SchemaAgent(mock_event_bus, run_id)
     # Mock ingestion result with DataFrame
@@ -20,10 +25,12 @@ async def test_schema_validates_columns(sample_df, mock_event_bus, run_id):
     assert result.row_count == len(sample_df)
     assert len(result.null_rates) == len(sample_df.columns)
 
+
 @pytest.mark.asyncio
 async def test_schema_identifies_structural_na(sample_df, mock_event_bus, run_id):
-    from agents.schema_agent import SchemaAgent
     from unittest.mock import MagicMock
+
+    from agents.schema_agent import SchemaAgent
 
     agent = SchemaAgent(mock_event_bus, run_id)
     mock_ingestion = MagicMock()

@@ -1,6 +1,10 @@
 """Integration test — full pipeline end-to-end on the real dataset."""
+
+import os
+import sys
+
 import pytest
-import sys, os
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "pipeline"))
 
 
@@ -8,10 +12,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "pipeline
 @pytest.mark.integration
 async def test_full_pipeline_e2e(sample_csv_path, mock_event_bus):
     """Run all 8 agents in sequence on the full dataset."""
-    from agents.ingestion_agent import IngestionAgent
-    from agents.schema_agent import SchemaAgent
     from agents.cleaning_agent import CleaningAgent
     from agents.feature_agent import FeatureAgent
+    from agents.ingestion_agent import IngestionAgent
+    from agents.schema_agent import SchemaAgent
     from core.schemas import IngestionInput
 
     run_id = "integration-test"

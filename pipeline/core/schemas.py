@@ -11,8 +11,8 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # ── Enums ────────────────────────────────────────────────────────────────────
+
 
 class AgentStatus(str, Enum):
     PENDING = "PENDING"
@@ -39,6 +39,7 @@ class AnomalySeverity(str, Enum):
 
 # ── Agent Events (WebSocket payload) ─────────────────────────────────────────
 
+
 class AgentEvent(BaseModel):
     run_id: str
     agent: str
@@ -55,6 +56,7 @@ class AgentEvent(BaseModel):
 
 
 # ── Agent 1: Ingestion ───────────────────────────────────────────────────────
+
 
 class IngestionInput(BaseModel):
     csv_path: str = "/app/data/AmesHousing.csv"
@@ -76,6 +78,7 @@ class IngestionOutput(BaseModel):
 
 
 # ── Agent 2: Schema Validation ───────────────────────────────────────────────
+
 
 class ColumnInfo(BaseModel):
     name: str
@@ -108,8 +111,8 @@ class SchemaOutput(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)  #
 
 
-
 # ── Agent 3: Cleaning ────────────────────────────────────────────────────────
+
 
 class ImputationRecord(BaseModel):
     column: str
@@ -144,8 +147,8 @@ class CleaningOutput(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)  #
 
 
-
 # ── Agent 4: Feature Engineering ─────────────────────────────────────────────
+
 
 class FeatureManifestEntry(BaseModel):
     name: str
@@ -165,8 +168,8 @@ class FeatureOutput(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)  #
 
 
-
 # ── Agent 5: Encoding & Scaling ──────────────────────────────────────────────
+
 
 class EncodingOutput(BaseModel):
     final_shape: List[int] = []  # [rows, cols]
@@ -182,8 +185,8 @@ class EncodingOutput(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)  #
 
 
-
 # ── Agent 6: Anomaly Detection ───────────────────────────────────────────────
+
 
 class AnomalyDetail(BaseModel):
     feature: str
@@ -218,8 +221,8 @@ class AnomalyOutput(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)  #
 
 
-
 # ── Agent 7: ML Training ────────────────────────────────────────────────────
+
 
 class ModelMetrics(BaseModel):
     split: str
@@ -251,8 +254,8 @@ class MLTrainingOutput(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)  #
 
 
-
 # ── Agent 8: Orchestration ───────────────────────────────────────────────────
+
 
 class PipelineResult(BaseModel):
     run_id: str
@@ -272,6 +275,7 @@ class PipelineResult(BaseModel):
 
 
 # ── Processed Property (Final Output) ────────────────────────────────────────
+
 
 class QualityFlags(BaseModel):
     missing_imputed: bool = False
@@ -302,6 +306,7 @@ class ProcessedProperty(BaseModel):
 
 
 # ── API Schemas ──────────────────────────────────────────────────────────────
+
 
 class RunPipelineResponse(BaseModel):
     run_id: str

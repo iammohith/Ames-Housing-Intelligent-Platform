@@ -2,10 +2,13 @@
 Knowledge Builder — Generates plain-English documents from pipeline artifacts,
 chunks and embeds them, and loads into ChromaDB.
 """
+
 from __future__ import annotations
+
 import os
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Any, Dict, List
+
 from core.metrics import knowledge_base_chunks_total
 
 
@@ -27,31 +30,66 @@ class KnowledgeBuilder:
             # ChromaDB may not be available in pipeline container
             # Dashboard container handles this
             self._save_documents_to_disk(documents, run_id)
-            return len(chunks)
+            chunk_count = len(chunks)
+            knowledge_base_chunks_total.set(chunk_count)
+            return chunk_count
 
     def _generate_documents(self, results: Dict[str, Any]) -> List[Dict[str, str]]:
         docs = []
 
         # 1. Neighborhood stats
-        docs.append({"title": "neighborhood_stats", "content": self._gen_neighborhood_stats(results)})
+        docs.append(
+            {
+                "title": "neighborhood_stats",
+                "content": self._gen_neighborhood_stats(results),
+            }
+        )
         # 2. Feature importance
-        docs.append({"title": "feature_importance_report", "content": self._gen_feature_importance(results)})
+        docs.append(
+            {
+                "title": "feature_importance_report",
+                "content": self._gen_feature_importance(results),
+            }
+        )
         # 3. Model evaluation
-        docs.append({"title": "model_evaluation_report", "content": self._gen_model_eval(results)})
+        docs.append(
+            {
+                "title": "model_evaluation_report",
+                "content": self._gen_model_eval(results),
+            }
+        )
         # 4. Cleaning report
-        docs.append({"title": "cleaning_report", "content": self._gen_cleaning(results)})
+        docs.append(
+            {"title": "cleaning_report", "content": self._gen_cleaning(results)}
+        )
         # 5. Anomaly report
         docs.append({"title": "anomaly_report", "content": self._gen_anomaly(results)})
         # 6. Price trends
-        docs.append({"title": "price_trends_report", "content": self._gen_price_trends(results)})
+        docs.append(
+            {"title": "price_trends_report", "content": self._gen_price_trends(results)}
+        )
         # 7. Pipeline summary
-        docs.append({"title": "pipeline_summary", "content": self._gen_pipeline_summary(results)})
+        docs.append(
+            {
+                "title": "pipeline_summary",
+                "content": self._gen_pipeline_summary(results),
+            }
+        )
         # 8. Feature manifest
-        docs.append({"title": "feature_manifest", "content": self._gen_feature_manifest(results)})
+        docs.append(
+            {
+                "title": "feature_manifest",
+                "content": self._gen_feature_manifest(results),
+            }
+        )
         # 9. Market segments
-        docs.append({"title": "market_segments", "content": self._gen_market_segments(results)})
+        docs.append(
+            {"title": "market_segments", "content": self._gen_market_segments(results)}
+        )
         # 10. Data dictionary
-        docs.append({"title": "data_dictionary", "content": self._gen_data_dictionary()})
+        docs.append(
+            {"title": "data_dictionary", "content": self._gen_data_dictionary()}
+        )
 
         return docs
 
@@ -123,10 +161,12 @@ class KnowledgeBuilder:
         return text
 
     def _gen_price_trends(self, results) -> str:
-        return ("Price Trends Report\n\nThe dataset covers sales from 2006 to 2010. "
-                "Average prices peaked in 2007 before the financial crisis impact. "
-                "Seasonal patterns show higher sales in spring/summer months (May-July). "
-                "2010 data served as the holdout test set for model evaluation.")
+        return (
+            "Price Trends Report\n\nThe dataset covers sales from 2006 to 2010. "
+            "Average prices peaked in 2007 before the financial crisis impact. "
+            "Seasonal patterns show higher sales in spring/summer months (May-July). "
+            "2010 data served as the holdout test set for model evaluation."
+        )
 
     def _gen_pipeline_summary(self, results) -> str:
         text = "Pipeline Execution Summary\n\n"
@@ -154,20 +194,24 @@ class KnowledgeBuilder:
         return text
 
     def _gen_market_segments(self, results) -> str:
-        return ("Market Segments Report\n\nAmes housing market segments:\n"
-                "- Luxury: NridgHt, StoneBr, NoRidge (median >$250k)\n"
-                "- Upper-mid: Timber, Veenker, Somerst (median $180-250k)\n"
-                "- Mid-market: CollgCr, Crawfor, Gilbert (median $150-180k)\n"
-                "- Affordable: Edwards, OldTown, BrDale (median <$130k)\n"
-                "- Budget: MeadowV, IDOTRR, BrkSide (median <$110k)")
+        return (
+            "Market Segments Report\n\nAmes housing market segments:\n"
+            "- Luxury: NridgHt, StoneBr, NoRidge (median >$250k)\n"
+            "- Upper-mid: Timber, Veenker, Somerst (median $180-250k)\n"
+            "- Mid-market: CollgCr, Crawfor, Gilbert (median $150-180k)\n"
+            "- Affordable: Edwards, OldTown, BrDale (median <$130k)\n"
+            "- Budget: MeadowV, IDOTRR, BrkSide (median <$110k)"
+        )
 
     def _gen_data_dictionary(self) -> str:
-        return ("Ames Housing Data Dictionary\n\n"
-                "The dataset contains 82 columns describing 2,930 residential properties.\n"
-                "Key columns: SalePrice (target), Overall Qual (1-10 quality rating), "
-                "Gr Liv Area (above ground living area), Neighborhood (28 areas), "
-                "Year Built, Total Bsmt SF, Garage Area, Full Bath, Kitchen Qual.\n"
-                "The data spans sales from 2006-2010 in Ames, Iowa.")
+        return (
+            "Ames Housing Data Dictionary\n\n"
+            "The dataset contains 82 columns describing 2,930 residential properties.\n"
+            "Key columns: SalePrice (target), Overall Qual (1-10 quality rating), "
+            "Gr Liv Area (above ground living area), Neighborhood (28 areas), "
+            "Year Built, Total Bsmt SF, Garage Area, Full Bath, Kitchen Qual.\n"
+            "The data spans sales from 2006-2010 in Ames, Iowa."
+        )
 
     def _chunk_documents(self, documents: List[Dict[str, str]]) -> List[Dict[str, str]]:
         chunks = []
@@ -175,28 +219,37 @@ class KnowledgeBuilder:
             content = doc["content"]
             words = content.split()
             for i in range(0, len(words), self.CHUNK_SIZE - self.CHUNK_OVERLAP):
-                chunk_words = words[i:i + self.CHUNK_SIZE]
+                chunk_words = words[i : i + self.CHUNK_SIZE]
                 if chunk_words:
-                    chunks.append({
-                        "title": doc["title"],
-                        "content": " ".join(chunk_words),
-                        "chunk_index": len(chunks),
-                    })
+                    chunks.append(
+                        {
+                            "title": doc["title"],
+                            "content": " ".join(chunk_words),
+                            "chunk_index": len(chunks),
+                        }
+                    )
         return chunks
 
     def _index_chunks(self, chunks, run_id: str) -> int:
         import chromadb
-        from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
-        
-        emb_fn = SentenceTransformerEmbeddingFunction(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        from chromadb.utils.embedding_functions import \
+            SentenceTransformerEmbeddingFunction
+
+        emb_fn = SentenceTransformerEmbeddingFunction(
+            model_name="sentence-transformers/all-MiniLM-L6-v2"
+        )
         client = chromadb.PersistentClient(path="/app/chroma")
-        collection = client.get_or_create_collection("ames_knowledge", embedding_function=emb_fn)
+        collection = client.get_or_create_collection(
+            "ames_knowledge", embedding_function=emb_fn
+        )
         # Reset collection
         try:
             client.delete_collection("ames_knowledge")
         except Exception:
             pass
-        collection = client.create_collection("ames_knowledge", embedding_function=emb_fn)
+        collection = client.create_collection(
+            "ames_knowledge", embedding_function=emb_fn
+        )
 
         ids = [f"{run_id}_{c['chunk_index']}" for c in chunks]
         documents = [c["content"] for c in chunks]
@@ -213,25 +266,31 @@ class KnowledgeBuilder:
             with open(os.path.join(doc_dir, f"{doc['title']}.txt"), "w") as f:
                 f.write(doc["content"])
 
-    def rebuild_from_artifacts(self, artifacts_dir: str = "/app/artifacts/knowledge") -> int:
+    def rebuild_from_artifacts(
+        self, artifacts_dir: str = "/app/artifacts/knowledge"
+    ) -> int:
         if not os.path.exists(artifacts_dir):
             return 0
         documents = []
         runs = os.listdir(artifacts_dir)
         if not runs:
             return 0
-            
-        runs_with_time = [(r, os.path.getmtime(os.path.join(artifacts_dir, r))) for r in runs]
+
+        runs_with_time = [
+            (r, os.path.getmtime(os.path.join(artifacts_dir, r))) for r in runs
+        ]
         runs_with_time.sort(key=lambda x: x[1], reverse=True)
         run_dir = os.path.join(artifacts_dir, runs_with_time[0][0])
-        
+
         if not os.path.isdir(run_dir):
             return 0
-            
+
         for f in os.listdir(run_dir):
             if f.endswith(".txt"):
                 with open(os.path.join(run_dir, f)) as fh:
-                    documents.append({"title": f.replace(".txt", ""), "content": fh.read()})
+                    documents.append(
+                        {"title": f.replace(".txt", ""), "content": fh.read()}
+                    )
 
         if not documents:
             return 0

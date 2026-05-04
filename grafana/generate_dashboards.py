@@ -38,11 +38,21 @@ def generate_pipeline_health():
     """Dashboard 1: Pipeline Health — run success rate, per-agent latency."""
     panels = [
         _panel(
-            "Pipeline Runs — Success vs Failure",
+            "Pipeline Runs — Success vs Failure (24h)",
             "stat",
             {"h": 6, "w": 6, "x": 0, "y": 0},
-            [_prom_target('pipeline_runs_total{status="success"}', "Success", "A"),
-             _prom_target('pipeline_runs_total{status="failure"}', "Failure", "B")],
+            [
+                _prom_target(
+                    'sum(increase(pipeline_runs_total{status="success"}[24h]))',
+                    "Success",
+                    "A",
+                ),
+                _prom_target(
+                    'sum(increase(pipeline_runs_total{status="failure"}[24h]))',
+                    "Failure",
+                    "B",
+                ),
+            ],
         ),
         _panel(
             "Pipeline Currently Running",
@@ -57,37 +67,48 @@ def generate_pipeline_health():
             [_prom_target("rows_processed_last_run", "Rows")],
         ),
         _panel(
-            "Agent Runs — Total by Status",
+            "Agent Runs — Total by Status (24h)",
             "barchart",
             {"h": 8, "w": 12, "x": 12, "y": 0},
-            [_prom_target("agent_runs_total", "{{agent_name}} — {{status}}")],
+            [
+                _prom_target(
+                    "sum by (agent_name, status) (increase(agent_runs_total[24h]))",
+                    "{{agent_name}} — {{status}}",
+                )
+            ],
         ),
         _panel(
             "Agent Duration — P50",
             "timeseries",
             {"h": 8, "w": 12, "x": 0, "y": 6},
-            [_prom_target(
-                'histogram_quantile(0.50, rate(agent_duration_seconds_bucket[5m]))',
-                "{{agent_name}} P50"
-            )],
+            [
+                _prom_target(
+                    "histogram_quantile(0.50, rate(agent_duration_seconds_bucket[5m]))",
+                    "{{agent_name}} P50",
+                )
+            ],
         ),
         _panel(
             "Agent Duration — P95",
             "timeseries",
             {"h": 8, "w": 12, "x": 12, "y": 8},
-            [_prom_target(
-                'histogram_quantile(0.95, rate(agent_duration_seconds_bucket[5m]))',
-                "{{agent_name}} P95"
-            )],
+            [
+                _prom_target(
+                    "histogram_quantile(0.95, rate(agent_duration_seconds_bucket[5m]))",
+                    "{{agent_name}} P95",
+                )
+            ],
         ),
         _panel(
             "Agent Error Rate",
             "timeseries",
             {"h": 8, "w": 24, "x": 0, "y": 16},
-            [_prom_target(
-                'rate(agent_runs_total{status="failure"}[5m])',
-                "{{agent_name}} errors/s"
-            )],
+            [
+                _prom_target(
+                    'rate(agent_runs_total{status="failure"}[5m])',
+                    "{{agent_name}} errors/s",
+                )
+            ],
         ),
     ]
 
@@ -140,10 +161,11 @@ def generate_data_quality():
             "API Request Duration",
             "heatmap",
             {"h": 8, "w": 24, "x": 0, "y": 18},
-            [_prom_target(
-                "rate(api_request_duration_seconds_bucket[5m])",
-                "{{endpoint}}"
-            )],
+            [
+                _prom_target(
+                    "rate(api_request_duration_seconds_bucket[5m])", "{{endpoint}}"
+                )
+            ],
         ),
     ]
 
@@ -202,10 +224,12 @@ def generate_model_performance():
             "RAG Query Duration",
             "timeseries",
             {"h": 8, "w": 24, "x": 0, "y": 14},
-            [_prom_target(
-                'histogram_quantile(0.95, rate(rag_query_duration_seconds_bucket[5m]))',
-                "RAG P95"
-            )],
+            [
+                _prom_target(
+                    "histogram_quantile(0.95, rate(rag_query_duration_seconds_bucket[5m]))",
+                    "RAG P95",
+                )
+            ],
         ),
     ]
 
@@ -240,18 +264,20 @@ def main():
     for filename, dashboard in dashboards.items():
         provisioned = {
             "apiVersion": 1,
-            "providers": [{
-                "name": filename.replace(".json", ""),
-                "orgId": 1,
-                "folder": "",
-                "type": "file",
-                "disableDeletion": False,
-                "editable": True,
-                "options": {
-                    "path": "/etc/grafana/provisioning/dashboards",
-                    "foldersFromFilesStructure": False,
-                },
-            }],
+            "providers": [
+                {
+                    "name": filename.replace(".json", ""),
+                    "orgId": 1,
+                    "folder": "",
+                    "type": "file",
+                    "disableDeletion": False,
+                    "editable": True,
+                    "options": {
+                        "path": "/etc/grafana/provisioning/dashboards",
+                        "foldersFromFilesStructure": False,
+                    },
+                }
+            ],
         }
 
         # Write the dashboard JSON
@@ -264,6 +290,7 @@ def main():
     prov_path = os.path.join(OUTPUT_DIR, "dashboards.yml")
     with open(prov_path, "w") as f:
         import yaml
+
         yaml_content = """apiVersion: 1
 
 providers:

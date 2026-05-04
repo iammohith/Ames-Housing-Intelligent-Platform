@@ -2,38 +2,82 @@
 Agent 5 — Encoding & Scaling Agent
 Transform all features into a fully numeric, model-ready matrix.
 """
+
 from __future__ import annotations
+
 import json
 import os
 import pickle
+
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import RobustScaler, OneHotEncoder
 from agents.base_agent import BaseAgent
 from core.schemas import AgentStatus, EncodingOutput
+from sklearn.preprocessing import OneHotEncoder, RobustScaler
 
 ORDINAL_MAPS = {
-    "quality_5":  {"Ex": 5, "Gd": 4, "TA": 3, "Fa": 2, "Po": 1, "None": 0, "NA": 0},
-    "finish_3":   {"GLQ": 6, "ALQ": 5, "BLQ": 4, "Rec": 3, "LwQ": 2, "Unf": 1, "None": 0, "NA": 0, "Fin": 3, "RFn": 2},
+    "quality_5": {"Ex": 5, "Gd": 4, "TA": 3, "Fa": 2, "Po": 1, "None": 0, "NA": 0},
+    "finish_3": {
+        "GLQ": 6,
+        "ALQ": 5,
+        "BLQ": 4,
+        "Rec": 3,
+        "LwQ": 2,
+        "Unf": 1,
+        "None": 0,
+        "NA": 0,
+        "Fin": 3,
+        "RFn": 2,
+    },
     "exposure_4": {"Gd": 4, "Av": 3, "Mn": 2, "No": 1, "None": 0, "NA": 0},
-    "slope_3":    {"Gtl": 1, "Mod": 2, "Sev": 3},
+    "slope_3": {"Gtl": 1, "Mod": 2, "Sev": 3},
+    "functional_8": {
+        "Typ": 8,
+        "Min1": 7,
+        "Min2": 6,
+        "Mod": 5,
+        "Maj1": 4,
+        "Maj2": 3,
+        "Sev": 2,
+        "Sal": 1,
+        "None": 0,
+    },
+    "paved_drive_3": {"Y": 3, "P": 2, "N": 1, "None": 0},
 }
 
 ORDINAL_COLUMN_MAP = {
-    "Exter Qual": "quality_5", "Exter Cond": "quality_5",
-    "Bsmt Qual": "quality_5", "Bsmt Cond": "quality_5",
-    "Heating QC": "quality_5", "Kitchen Qual": "quality_5",
-    "Fireplace Qu": "quality_5", "Garage Qual": "quality_5",
-    "Garage Cond": "quality_5", "Pool QC": "quality_5",
+    "Exter Qual": "quality_5",
+    "Exter Cond": "quality_5",
+    "Bsmt Qual": "quality_5",
+    "Bsmt Cond": "quality_5",
+    "Heating QC": "quality_5",
+    "Kitchen Qual": "quality_5",
+    "Fireplace Qu": "quality_5",
+    "Garage Qual": "quality_5",
+    "Garage Cond": "quality_5",
+    "Pool QC": "quality_5",
     "Bsmt Exposure": "exposure_4",
-    "BsmtFin Type 1": "finish_3", "BsmtFin Type 2": "finish_3",
-    "Garage Finish": "finish_3", "Land Slope": "slope_3",
+    "BsmtFin Type 1": "finish_3",
+    "BsmtFin Type 2": "finish_3",
+    "Garage Finish": "finish_3",
+    "Land Slope": "slope_3",
+    "Functional": "functional_8",
+    "Paved Drive": "paved_drive_3",
 }
 
 OHE_COLS = [
-    "MS Zoning", "Lot Shape", "Land Contour", "Lot Config",
-    "Bldg Type", "House Style", "Roof Style", "Foundation",
-    "Heating", "Central Air", "Sale Type", "Sale Condition",
+    "MS Zoning",
+    "Lot Shape",
+    "Land Contour",
+    "Lot Config",
+    "Bldg Type",
+    "House Style",
+    "Roof Style",
+    "Foundation",
+    "Heating",
+    "Central Air",
+    "Sale Type",
+    "Sale Condition",
 ]
 
 TARGET_ENCODE_COLS = ["Neighborhood", "Exterior 1st", "Exterior 2nd"]
@@ -45,6 +89,7 @@ DROP_COLS = ["Order", "PID"]
 
 class SmoothedTargetEncoder:
     """Smoothed target encoding fitted on training fold only."""
+
     def __init__(self, smoothing_factor=10.0, min_samples_leaf=5):
         self.smoothing_factor = smoothing_factor
         self.min_samples_leaf = min_samples_leaf
@@ -53,11 +98,19 @@ class SmoothedTargetEncoder:
 
     def fit(self, X_col: pd.Series, y: pd.Series):
         self.global_mean_ = y.mean()
-        stats = pd.DataFrame({"val": X_col, "target": y}).groupby("val")["target"].agg(["mean", "count"])
+        stats = (
+            pd.DataFrame({"val": X_col, "target": y})
+            .groupby("val")["target"]
+            .agg(["mean", "count"])
+        )
         for cat, row in stats.iterrows():
             n = row["count"]
-            smooth = 1.0 / (1.0 + np.exp(-(n - self.min_samples_leaf) / self.smoothing_factor))
-            self.encodings_[cat] = smooth * row["mean"] + (1 - smooth) * self.global_mean_
+            smooth = 1.0 / (
+                1.0 + np.exp(-(n - self.min_samples_leaf) / self.smoothing_factor)
+            )
+            self.encodings_[cat] = (
+                smooth * row["mean"] + (1 - smooth) * self.global_mean_
+            )
         return self
 
     def transform(self, X_col: pd.Series) -> pd.Series:
@@ -71,7 +124,18 @@ class EncodingAgent(BaseAgent):
     async def execute(self, input_data) -> EncodingOutput:
         df: pd.DataFrame = self._get_df(input_data).copy()
 
-        await self.emit(AgentStatus.PROGRESS, f"Encoding {len(df.columns)} features into model-ready matrix")
+        await self.emit(
+            AgentStatus.PROGRESS,
+            f"Encoding {len(df.columns)} features into model-ready matrix",
+        )
+
+        # Preserve PID and Neighborhood (original) as metadata for downstream agents
+        # (anomaly_agent needs real identifiers, not encoded values)
+        self._metadata_cols = {}
+        if "PID" in df.columns:
+            self._metadata_cols["PID"] = df["PID"].copy()
+        if "Neighborhood" in df.columns:
+            self._metadata_cols["Neighborhood_original"] = df["Neighborhood"].copy()
 
         # Drop non-feature columns
         for col in DROP_COLS:
@@ -97,7 +161,10 @@ class EncodingAgent(BaseAgent):
         with open(os.path.join(artifact_dir, "ordinal_maps.json"), "w") as f:
             json.dump(ORDINAL_MAPS, f)
         artifacts_saved.append("ordinal_maps.json")
-        await self.emit(AgentStatus.PROGRESS, f"Ordinal encoding: {ordinal_count} quality columns mapped ✓")
+        await self.emit(
+            AgentStatus.PROGRESS,
+            f"Ordinal encoding: {ordinal_count} quality columns mapped ✓",
+        )
 
         # 2. Target encoding (fitted on training fold only)
         target_encoders = {}
@@ -113,7 +180,10 @@ class EncodingAgent(BaseAgent):
         with open(os.path.join(artifact_dir, "target_encoder.pkl"), "wb") as f:
             pickle.dump(target_encoders, f)
         artifacts_saved.append("target_encoder.pkl")
-        await self.emit(AgentStatus.PROGRESS, f"Target encoding: {te_count} high-cardinality columns — fitted on training fold ✓")
+        await self.emit(
+            AgentStatus.PROGRESS,
+            f"Target encoding: {te_count} high-cardinality columns — fitted on training fold ✓",
+        )
 
         # 3. One-hot encoding
         ohe_cols_present = [c for c in OHE_COLS if c in df.columns]
@@ -130,7 +200,10 @@ class EncodingAgent(BaseAgent):
             pickle.dump(ohe, f)
         artifacts_saved.append("ohe_encoder.pkl")
         ohe_features = len(ohe_feature_names) if ohe_cols_present else 0
-        await self.emit(AgentStatus.PROGRESS, f"One-hot encoding: {len(ohe_cols_present)} nominal columns → {ohe_features} binary features ✓")
+        await self.emit(
+            AgentStatus.PROGRESS,
+            f"One-hot encoding: {len(ohe_cols_present)} nominal columns → {ohe_features} binary features ✓",
+        )
 
         # 4. Drop remaining string columns
         remaining_str = df.select_dtypes(include="object").columns.tolist()
@@ -147,12 +220,18 @@ class EncodingAgent(BaseAgent):
         with open(os.path.join(artifact_dir, "log_transform_cols.json"), "w") as f:
             json.dump(log_cols_applied, f)
         artifacts_saved.append("log_transform_cols.json")
-        await self.emit(AgentStatus.PROGRESS, f"Log-transforming: {', '.join(log_cols_applied)} ✓")
+        await self.emit(
+            AgentStatus.PROGRESS, f"Log-transforming: {', '.join(log_cols_applied)} ✓"
+        )
 
         # 6. RobustScaler on continuous features
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         exclude_from_scaling = ["SalePrice", "log_SalePrice", "Yr Sold"]
-        scale_cols = [c for c in numeric_cols if c not in exclude_from_scaling and not c.startswith("log_")]
+        scale_cols = [
+            c
+            for c in numeric_cols
+            if c not in exclude_from_scaling and not c.startswith("log_")
+        ]
 
         scaler = RobustScaler()
         if scale_cols:
@@ -169,8 +248,13 @@ class EncodingAgent(BaseAgent):
             json.dump(feature_names, f)
         artifacts_saved.append("feature_names_ordered.json")
 
-        await self.emit(AgentStatus.PROGRESS, f"RobustScaler: fitted on {len(scale_cols)} continuous features ✓")
-        await self.emit(AgentStatus.PROGRESS, f"Encoder artifacts serialised to {artifact_dir} ✓")
+        await self.emit(
+            AgentStatus.PROGRESS,
+            f"RobustScaler: fitted on {len(scale_cols)} continuous features ✓",
+        )
+        await self.emit(
+            AgentStatus.PROGRESS, f"Encoder artifacts serialised to {artifact_dir} ✓"
+        )
 
         self._df = df
         self._train_mask = train_mask

@@ -2,21 +2,24 @@
 Page 1 — Pipeline Monitor (Real-Time)
 Live DAG visualization, agent status cards, streaming logs, and metrics.
 """
+
 import json
 import os
 import time
 from datetime import datetime
-import streamlit as st
-import requests
+
 import pandas as pd
 import plotly.express as px
+import requests
+import streamlit as st
 
 API_URL = os.getenv("API_URL", "http://orchestration-api:8000")
 
 st.set_page_config(page_title="Pipeline Monitor", page_icon="📡", layout="wide")
 
 # Custom CSS for terminal aesthetics
-st.markdown("""
+st.markdown(
+    """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap');
 .log-line { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; padding: 2px 8px; border-radius: 3px; margin: 1px 0; }
@@ -107,7 +110,9 @@ st.markdown("""
 .dag-fork-wrap { display: flex; justify-content: center; gap: 60px; }
 .dag-fork-col { display: flex; flex-direction: column; align-items: center; }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # Initialize session state
 if "run_id" not in st.session_state:
@@ -162,12 +167,16 @@ with col4:
         st.session_state.pipeline_status, "⚪"
     )
     run_label = st.session_state.run_id or "—"
-    st.markdown(f"**{status_color} {st.session_state.pipeline_status}** | Run: `{run_label}`")
+    st.markdown(
+        f"**{status_color} {st.session_state.pipeline_status}** | Run: `{run_label}`"
+    )
 
 # ── Poll for updates ─────────────────────────────────────────────────────
 if st.session_state.run_id:
     try:
-        resp = requests.get(f"{API_URL}/api/status/{st.session_state.run_id}", timeout=5)
+        resp = requests.get(
+            f"{API_URL}/api/status/{st.session_state.run_id}", timeout=5
+        )
         if resp.status_code == 200:
             status_data = resp.json()
             st.session_state.agent_statuses = status_data.get("agents", {})
@@ -178,7 +187,9 @@ if st.session_state.run_id:
                 st.session_state.pipeline_status = status_data["status"]
 
             if st.session_state.pipeline_status == "RUNNING":
-                st.progress(progress / 100.0, text=f"Pipeline Progress: {progress:.0f}%")
+                st.progress(
+                    progress / 100.0, text=f"Pipeline Progress: {progress:.0f}%"
+                )
     except Exception:
         pass
 elif not st.session_state.metrics:
@@ -205,6 +216,7 @@ parallel_agents = [
 ]
 final_agent = ("orchestration_agent", "ORCHESTRATION")
 
+
 def get_dag_class(agent_name):
     status = st.session_state.agent_statuses.get(agent_name, "IDLE")
     if status == "SUCCESS":
@@ -215,6 +227,7 @@ def get_dag_class(agent_name):
         return "dag-failed"
     return "dag-idle"
 
+
 def get_arrow_class(agent_name):
     status = st.session_state.agent_statuses.get(agent_name, "IDLE")
     if status == "SUCCESS":
@@ -222,6 +235,7 @@ def get_arrow_class(agent_name):
     elif status in ("STARTED", "PROGRESS"):
         return "dag-arrow-active"
     return ""
+
 
 # Render DAG as HTML
 def get_vconn(agent_name):
@@ -232,14 +246,21 @@ def get_vconn(agent_name):
         return "dag-vline-active"
     return ""
 
+
 def node_html(agent_id, label):
     return f'<div class="dag-node {get_dag_class(agent_id)}">{label}</div>'
+
 
 def conn_html(agent_id):
     return f'<div class="dag-vconn"><div class="dag-vline {get_vconn(agent_id)}"></div></div>'
 
+
 enc_status = st.session_state.agent_statuses.get("encoding_agent", "IDLE")
-fork_conn = "dag-vline-done" if enc_status == "SUCCESS" else ("dag-vline-active" if enc_status in ("STARTED", "PROGRESS") else "")
+fork_conn = (
+    "dag-vline-done"
+    if enc_status == "SUCCESS"
+    else ("dag-vline-active" if enc_status in ("STARTED", "PROGRESS") else "")
+)
 
 dag_html = f"""
 <div class="dag-container">
@@ -278,16 +299,29 @@ cols = st.columns(4)
 for i, (agent_id, label) in enumerate(all_agents):
     with cols[i % 4]:
         status = st.session_state.agent_statuses.get(agent_id, "IDLE")
-        icon = {"SUCCESS": "✅", "STARTED": "⏳", "PROGRESS": "⟳", "FAILED": "❌", "WARNING": "⚠️"}.get(status, "⬜")
-        card_class = {"SUCCESS": "agent-card-success", "STARTED": "agent-card-running",
-                      "PROGRESS": "agent-card-running", "FAILED": "agent-card-failed"}.get(status, "agent-card-idle")
+        icon = {
+            "SUCCESS": "✅",
+            "STARTED": "⏳",
+            "PROGRESS": "⟳",
+            "FAILED": "❌",
+            "WARNING": "⚠️",
+        }.get(status, "⬜")
+        card_class = {
+            "SUCCESS": "agent-card-success",
+            "STARTED": "agent-card-running",
+            "PROGRESS": "agent-card-running",
+            "FAILED": "agent-card-failed",
+        }.get(status, "agent-card-idle")
 
-        st.markdown(f"""
+        st.markdown(
+            f"""
         <div class="agent-card {card_class}">
             <div class="agent-title">{icon} {label}</div>
             <div class="agent-status">{status}</div>
         </div>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
 
 # ── Metrics Row ──────────────────────────────────────────────────────────
 st.markdown("### 📊 Real-Time Metrics")
@@ -310,7 +344,9 @@ m6.metric("KB Chunks", val_kb)
 
 # ── Tabbed Panel ─────────────────────────────────────────────────────────
 st.markdown("### 📁 Diagnostics")
-tab1, tab2, tab3, tab4 = st.tabs(["Run History", "Data Quality", "Anomaly Log", "Schema Drift"])
+tab1, tab2, tab3, tab4 = st.tabs(
+    ["Run History", "Data Quality", "Anomaly Log", "Schema Drift"]
+)
 
 with tab1:
     try:
@@ -324,18 +360,38 @@ with tab1:
                 # Assuming constant duration if not provided in the API yet, or generate synthetic duration for the visualization
                 if "duration_ms" not in df_runs.columns:
                     import random
-                    df_runs["duration_ms"] = [random.randint(120, 250) for _ in range(len(df_runs))]
-                
+
+                    df_runs["duration_ms"] = [
+                        random.randint(120, 250) for _ in range(len(df_runs))
+                    ]
+
                 fig = px.bar(
-                    df_runs, x="started_at", y="duration_ms", color="status",
-                    color_discrete_map={"SUCCESS": "#10B981", "FAILED": "#EF4444", "RUNNING": "#3B82F6"},
-                    labels={"started_at": "Run Timestamp", "duration_ms": "Duration (ms)"},
-                    title="Recent Pipeline Runs"
+                    df_runs,
+                    x="started_at",
+                    y="duration_ms",
+                    color="status",
+                    color_discrete_map={
+                        "SUCCESS": "#10B981",
+                        "FAILED": "#EF4444",
+                        "RUNNING": "#3B82F6",
+                    },
+                    labels={
+                        "started_at": "Run Timestamp",
+                        "duration_ms": "Duration (ms)",
+                    },
+                    title="Recent Pipeline Runs",
                 )
-                fig.update_layout(height=350, margin=dict(l=0, r=0, t=30, b=0), font=dict(family="Inter"))
+                fig.update_layout(
+                    height=350,
+                    margin=dict(l=0, r=0, t=30, b=0),
+                    font=dict(family="Inter"),
+                )
                 st.plotly_chart(fig, use_container_width=True)
-                
-                st.dataframe(df_runs.sort_values("started_at", ascending=False), use_container_width=True)
+
+                st.dataframe(
+                    df_runs.sort_values("started_at", ascending=False),
+                    use_container_width=True,
+                )
             else:
                 st.info("No pipeline runs yet. Click ▶ RUN PIPELINE to start.")
     except Exception as e:
@@ -347,20 +403,94 @@ with tab2:
         if resp.status_code == 200:
             history = resp.json().get("history", [])
             if history:
+                import numpy as np
+                import plotly.graph_objects as go
+
                 df_hist = pd.DataFrame(history)
                 # Group by latest run
                 latest_run = df_hist.iloc[0]["run_id"]
                 df_latest = df_hist[df_hist["run_id"] == latest_run].copy()
-                
+
                 st.markdown("#### Data Quality Heatmap (Latest Run)")
                 if "is_structural_na" not in df_latest.columns:
                     df_latest["is_structural_na"] = df_latest["null_rate"] > 0.4
-                    
-                # Format for display
-                df_display = df_latest[["column", "data_type", "null_rate", "is_structural_na"]].copy()
+
+                # --- Build a real heatmap ---
+                # Separate by data type for grouped display
+                df_sorted = df_latest.sort_values("null_rate", ascending=False)
+
+                # Only show columns with some missingness or structural NA (top 30 for readability)
+                df_with_nulls = df_sorted[df_sorted["null_rate"] > 0].head(30)
+                if df_with_nulls.empty:
+                    df_with_nulls = df_sorted.head(30)
+
+                columns = df_with_nulls["column"].tolist()
+                null_rates = df_with_nulls["null_rate"].tolist()
+                structural = [
+                    1.0 if v else 0.0
+                    for v in df_with_nulls["is_structural_na"].tolist()
+                ]
+                dtypes = df_with_nulls["data_type"].tolist()
+
+                # Create a 2-row heatmap: row 0 = null rate, row 1 = structural NA flag
+                z_data = [null_rates, structural]
+
+                # Custom hover text
+                hover_null = [
+                    f"{col}<br>Null Rate: {nr:.1%}<br>Type: {dt}"
+                    for col, nr, dt in zip(columns, null_rates, dtypes)
+                ]
+                hover_struct = [
+                    f"{col}<br>Structural NA: {'Yes' if s else 'No'}"
+                    for col, s in zip(columns, structural)
+                ]
+                hover_data = [hover_null, hover_struct]
+
+                fig_heatmap = go.Figure(
+                    data=go.Heatmap(
+                        z=z_data,
+                        x=columns,
+                        y=["Null Rate", "Structural NA"],
+                        colorscale=[
+                            [0.0, "#ECFDF5"],  # green - clean
+                            [0.2, "#A7F3D0"],
+                            [0.4, "#FEF3C7"],  # yellow - moderate
+                            [0.6, "#FBBF24"],
+                            [0.8, "#F87171"],  # red - severe
+                            [1.0, "#B91C1C"],
+                        ],
+                        hovertext=hover_data,
+                        hoverinfo="text",
+                        showscale=True,
+                        colorbar=dict(
+                            title="Rate",
+                            tickformat=".0%",
+                            thickness=12,
+                            len=0.8,
+                        ),
+                        zmin=0,
+                        zmax=1,
+                    )
+                )
+
+                fig_heatmap.update_layout(
+                    height=280,
+                    margin=dict(l=0, r=0, t=10, b=0),
+                    font=dict(family="Inter", size=11),
+                    xaxis=dict(tickangle=-45, side="bottom"),
+                    yaxis=dict(autorange="reversed"),
+                    plot_bgcolor="#FAFAFC",
+                    paper_bgcolor="#FAFAFC",
+                )
+                st.plotly_chart(fig_heatmap, use_container_width=True)
+
+                # Compact summary table below
+                st.markdown("##### Column Details")
+                df_display = df_latest[
+                    ["column", "data_type", "null_rate", "is_structural_na"]
+                ].copy()
+                df_display = df_display.sort_values("null_rate", ascending=False)
                 df_display.set_index("column", inplace=True)
-                
-                # Replace matplotlib background gradient with Streamlit native column_config
                 st.dataframe(
                     df_display,
                     column_config={
@@ -372,7 +502,8 @@ with tab2:
                             max_value=1,
                         ),
                     },
-                    use_container_width=True, height=400
+                    use_container_width=True,
+                    height=300,
                 )
             else:
                 st.info("No data quality metrics recorded yet.")
@@ -387,65 +518,104 @@ with tab3:
             if anomalies:
                 df_anom = pd.DataFrame(anomalies)
                 st.markdown("#### Flagged Properties")
-                
+
                 # Setup choices for selection
                 pids = df_anom["pid"].astype(str).tolist()
-                
+
                 col1, col2 = st.columns([1, 1])
                 with col1:
                     st.dataframe(
-                        df_anom[["pid", "neighborhood", "severity", "isolation_score", "methods"]],
-                        use_container_width=True, height=350
+                        df_anom[
+                            [
+                                "pid",
+                                "neighborhood",
+                                "severity",
+                                "isolation_score",
+                                "methods",
+                            ]
+                        ],
+                        use_container_width=True,
+                        height=350,
                     )
                 with col2:
                     selected_pid = st.selectbox("Select a PID for details:", pids)
                     if selected_pid:
-                        row = df_anom[df_anom["pid"].astype(str) == selected_pid].iloc[0]
+                        row = df_anom[df_anom["pid"].astype(str) == selected_pid].iloc[
+                            0
+                        ]
                         st.markdown(f"**PID {row['pid']} ({row['neighborhood']})**")
-                        st.markdown(f"**Severity:** {row['severity']} | **Score:** {row.get('isolation_score', 'N/A')}")
-                        
+                        st.markdown(
+                            f"**Severity:** {row['severity']} | **Score:** {row.get('isolation_score', 'N/A')}"
+                        )
+
                         # Fix JSON parsing for anomalous_features
                         import json
-                        features = row.get('anomalous_features', '{}')
+
+                        features = row.get("anomalous_features", "{}")
                         if isinstance(features, str):
                             try:
                                 features = json.loads(features)
                             except:
                                 features = {}
-                        
+
                         st.json(features)
-                        
+
                         # Plot the scatter chart for the primary anomalous feature
                         if features and isinstance(features, dict):
                             # Load dataset to get population distribution
                             try:
                                 df_full = pd.read_csv("/app/data/AmesHousing.csv")
                                 primary_feature = list(features.keys())[0]
-                                
+
                                 # Reconstruct key engineered features for visualization
-                                if "TotalSF" not in df_full.columns and "Total Bsmt SF" in df_full.columns:
-                                    df_full["TotalSF"] = df_full["Total Bsmt SF"] + df_full["1st Flr SF"] + df_full.get("2nd Flr SF", 0)
-                                if "OverallScore" not in df_full.columns and "Overall Qual" in df_full.columns:
-                                    df_full["OverallScore"] = df_full["Overall Qual"] * df_full.get("Overall Cond", 5)
-                                    
+                                if (
+                                    "TotalSF" not in df_full.columns
+                                    and "Total Bsmt SF" in df_full.columns
+                                ):
+                                    df_full["TotalSF"] = (
+                                        df_full["Total Bsmt SF"]
+                                        + df_full["1st Flr SF"]
+                                        + df_full.get("2nd Flr SF", 0)
+                                    )
+                                if (
+                                    "OverallScore" not in df_full.columns
+                                    and "Overall Qual" in df_full.columns
+                                ):
+                                    df_full["OverallScore"] = df_full[
+                                        "Overall Qual"
+                                    ] * df_full.get("Overall Cond", 5)
+
                                 if primary_feature in df_full.columns:
                                     # Handle mapping column names back if needed, but assuming exact match
                                     fig_scatter = px.scatter(
-                                        df_full, x=primary_feature, y="SalePrice", 
-                                        opacity=0.3, color_discrete_sequence=["#94A3B8"],
-                                        title=f"Anomaly Context: {primary_feature}"
+                                        df_full,
+                                        x=primary_feature,
+                                        y="SalePrice",
+                                        opacity=0.3,
+                                        color_discrete_sequence=["#94A3B8"],
+                                        title=f"Anomaly Context: {primary_feature}",
                                     )
                                     # Highlight the anomaly
                                     pid_val = int(selected_pid)
                                     anomaly_pt = df_full[df_full["PID"] == pid_val]
                                     if not anomaly_pt.empty:
                                         fig_scatter.add_scatter(
-                                            x=anomaly_pt[primary_feature], y=anomaly_pt["SalePrice"],
-                                            mode="markers", marker=dict(color="#EF4444", size=12, symbol="star"),
-                                            name="Flagged Property"
+                                            x=anomaly_pt[primary_feature],
+                                            y=anomaly_pt["SalePrice"],
+                                            mode="markers",
+                                            marker=dict(
+                                                color="#EF4444", size=12, symbol="star"
+                                            ),
+                                            name="Flagged Property",
                                         )
-                                    fig_scatter.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0), font=dict(family="Inter"))
-                                    st.plotly_chart(fig_scatter, use_container_width=True)
+                                    fig_scatter.update_layout(
+                                        height=300,
+                                        margin=dict(l=0, r=0, t=30, b=0),
+                                        font=dict(family="Inter"),
+                                    )
+                                    st.plotly_chart(
+                                        fig_scatter, use_container_width=True
+                                    )
                             except Exception as e:
                                 st.warning(f"Could not load distribution chart: {e}")
             else:
@@ -461,17 +631,35 @@ with tab4:
             if history:
                 df_hist = pd.DataFrame(history)
                 # Plot null rate over runs for the top 5 columns with highest null rate
-                top_cols = df_hist.groupby("column")["null_rate"].max().sort_values(ascending=False).head(5).index
-                df_plot = df_hist[df_hist["column"].isin(top_cols)].copy()
-                df_plot = df_plot.sort_values("run_id") # Normally sort by created_at
-                
-                fig = px.line(
-                    df_plot, x="run_id", y="null_rate", color="column", markers=True,
-                    title="Schema Drift: Null Rates Across Runs",
-                    labels={"run_id": "Pipeline Run", "null_rate": "Null Rate", "column": "Feature"}
+                top_cols = (
+                    df_hist.groupby("column")["null_rate"]
+                    .max()
+                    .sort_values(ascending=False)
+                    .head(5)
+                    .index
                 )
-                fig.update_layout(height=400, margin=dict(l=0, r=0, t=30, b=0), font=dict(family="Inter"))
-                fig.layout.yaxis.tickformat = ',.0%'
+                df_plot = df_hist[df_hist["column"].isin(top_cols)].copy()
+                df_plot = df_plot.sort_values("run_id")  # Normally sort by created_at
+
+                fig = px.line(
+                    df_plot,
+                    x="run_id",
+                    y="null_rate",
+                    color="column",
+                    markers=True,
+                    title="Schema Drift: Null Rates Across Runs",
+                    labels={
+                        "run_id": "Pipeline Run",
+                        "null_rate": "Null Rate",
+                        "column": "Feature",
+                    },
+                )
+                fig.update_layout(
+                    height=400,
+                    margin=dict(l=0, r=0, t=30, b=0),
+                    font=dict(family="Inter"),
+                )
+                fig.layout.yaxis.tickformat = ",.0%"
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info("No schema history recorded yet.")

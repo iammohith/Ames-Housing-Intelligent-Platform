@@ -1,23 +1,25 @@
 """
 FastAPI Application — Main entrypoint with WebSocket hub, SSE, and routes.
 """
+
 from __future__ import annotations
+
 import asyncio
-import uuid
 import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.middleware.cors import CORSMiddleware
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-from starlette.responses import Response
-from sse_starlette.sse import EventSourceResponse
-
+from api.routes import analytics, pipeline, predict, rag
 from core.event_bus import event_bus
+from core.metrics import (api_request_duration_seconds,
+                          pipeline_currently_running, pipeline_runs_total)
 from core.schemas import AgentEvent, AgentStatus, PipelineResult
-from core.metrics import pipeline_runs_total, pipeline_currently_running, api_request_duration_seconds
-from api.routes import pipeline, predict, analytics, rag
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from sse_starlette.sse import EventSourceResponse
+from starlette.responses import Response
 
 
 @asynccontextmanager
@@ -85,6 +87,7 @@ async def pipeline_events_sse(run_id: str, request: Request):
             if await request.is_disconnected():
                 break
             yield {"data": event.model_dump_json()}
+
     return EventSourceResponse(event_generator())
 
 

@@ -85,3 +85,25 @@ rows_processed_last_run = Gauge(
     "rows_processed_last_run",
     "Number of rows processed in the most recent run",
 )
+
+# ── Initialize label combinations so metrics are always visible to Prometheus ──
+
+_AGENT_NAMES = [
+    "ingestion_agent",
+    "schema_agent",
+    "cleaning_agent",
+    "feature_agent",
+    "encoding_agent",
+    "anomaly_agent",
+    "ml_agent",
+    "orchestration_agent",
+]
+
+# Pre-register counter label combos (value stays 0 until incremented)
+pipeline_runs_total.labels(status="success")
+pipeline_runs_total.labels(status="failure")
+
+for _agent in _AGENT_NAMES:
+    agent_runs_total.labels(agent_name=_agent, status="success")
+    agent_runs_total.labels(agent_name=_agent, status="failure")
+    agent_duration_seconds.labels(agent_name=_agent)

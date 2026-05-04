@@ -1,14 +1,18 @@
 """
 Dashboard Knowledge Builder — mirror of pipeline's builder for re-indexing.
 """
+
 from __future__ import annotations
+
 import os
 
 
 class KnowledgeBuilder:
     """Re-indexes knowledge base from saved artifacts."""
 
-    def rebuild_from_artifacts(self, artifacts_dir: str = "/app/artifacts/knowledge") -> int:
+    def rebuild_from_artifacts(
+        self, artifacts_dir: str = "/app/artifacts/knowledge"
+    ) -> int:
         if not os.path.exists(artifacts_dir):
             return 0
 
@@ -20,7 +24,9 @@ class KnowledgeBuilder:
             for f in os.listdir(doc_dir):
                 if f.endswith(".txt"):
                     with open(os.path.join(doc_dir, f)) as fh:
-                        documents.append({"title": f.replace(".txt", ""), "content": fh.read()})
+                        documents.append(
+                            {"title": f.replace(".txt", ""), "content": fh.read()}
+                        )
 
         if not documents:
             return 0
@@ -30,26 +36,30 @@ class KnowledgeBuilder:
         for doc in documents:
             words = doc["content"].split()
             for i in range(0, len(words), 462):  # 512 - 50 overlap
-                chunk_words = words[i:i + 512]
+                chunk_words = words[i : i + 512]
                 if chunk_words:
-                    chunks.append({"title": doc["title"], "content": " ".join(chunk_words)})
+                    chunks.append(
+                        {"title": doc["title"], "content": " ".join(chunk_words)}
+                    )
 
         # Index into ChromaDB
         try:
             import chromadb
             from chromadb.utils import embedding_functions
-            
-            # Use local cached embedding model instead of downloading ONNX runtime binaries
+
+            # Use same model name as pipeline's knowledge builder for consistency
             emb_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name="/app/model_cache/embeddings"
+                model_name="sentence-transformers/all-MiniLM-L6-v2"
             )
-            
+
             client = chromadb.PersistentClient(path="/app/chroma")
             try:
                 client.delete_collection("ames_knowledge")
             except Exception:
                 pass
-            collection = client.create_collection("ames_knowledge", embedding_function=emb_fn)
+            collection = client.create_collection(
+                "ames_knowledge", embedding_function=emb_fn
+            )
 
             ids = [f"rebuild_{i}" for i in range(len(chunks))]
             docs = [c["content"] for c in chunks]

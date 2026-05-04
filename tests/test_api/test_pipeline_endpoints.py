@@ -1,8 +1,12 @@
 """Tests for Pipeline API endpoints."""
+
+import os
+import sys
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
-import sys, os
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "pipeline"))
 from api.main import app
 

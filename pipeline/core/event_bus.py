@@ -13,9 +13,8 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from fastapi import WebSocket
-
 from core.schemas import AgentEvent, AgentStatus
+from fastapi import WebSocket
 
 logger = logging.getLogger(__name__)
 
@@ -99,9 +98,7 @@ class EventBus:
             except ValueError:
                 pass
 
-        logger.info(
-            f"[{run_id}] {event.agent} → {event.status.value}: {event.message}"
-        )
+        logger.info(f"[{run_id}] {event.agent} → {event.status.value}: {event.message}")
 
     async def subscribe(self, run_id: str) -> AsyncGenerator[AgentEvent, None]:
         """
@@ -143,9 +140,14 @@ class EventBus:
     def get_progress(self, run_id: str) -> float:
         """Calculate overall pipeline progress (0.0 to 100.0)."""
         all_agents = [
-            "ingestion_agent", "schema_agent", "cleaning_agent",
-            "feature_agent", "encoding_agent", "anomaly_agent",
-            "ml_agent", "orchestration_agent"
+            "ingestion_agent",
+            "schema_agent",
+            "cleaning_agent",
+            "feature_agent",
+            "encoding_agent",
+            "anomaly_agent",
+            "ml_agent",
+            "orchestration_agent",
         ]
         completed = 0
         statuses = self.get_agent_status(run_id)

@@ -1,7 +1,9 @@
 """
 Conversation Manager — Session memory for multi-turn chat.
 """
+
 from __future__ import annotations
+
 from typing import Dict, List
 
 
@@ -15,7 +17,7 @@ class ConversationManager:
     def add_message(self, role: str, content: str):
         self.history.append({"role": role, "content": content})
         if len(self.history) > self.max_history:
-            self.history = self.history[-self.max_history:]
+            self.history = self.history[-self.max_history :]
 
     def get_context_window(self, n_recent: int = 5) -> str:
         """Get recent conversation context for follow-up awareness."""

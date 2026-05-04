@@ -1,10 +1,27 @@
 """
 Analytics API Routes — data exploration and monitoring endpoints.
 """
+
 from __future__ import annotations
+
 import os
+
+import pandas as pd
 from fastapi import APIRouter
+
 router = APIRouter()
+
+
+def _get_knowledge_chunk_count() -> int:
+    """Query ChromaDB for actual knowledge base chunk count."""
+    try:
+        import chromadb
+
+        client = chromadb.PersistentClient(path="/app/chroma")
+        collection = client.get_collection("ames_knowledge")
+        return collection.count()
+    except Exception:
+        return 0
 
 
 @router.get("/anomalies")
@@ -12,6 +29,7 @@ async def get_anomalies(page: int = 1, per_page: int = 50, severity: str = None)
     """Paginated anomaly log with optional severity filter."""
     try:
         import psycopg2
+
         conn = psycopg2.connect(os.getenv("DATABASE_URL_SYNC", ""))
         cur = conn.cursor()
         query = "SELECT * FROM anomaly_log"
@@ -19,7 +37,9 @@ async def get_anomalies(page: int = 1, per_page: int = 50, severity: str = None)
         if severity:
             query += " WHERE severity = %s"
             params.append(severity)
-        query += f" ORDER BY created_at DESC LIMIT {per_page} OFFSET {(page-1)*per_page}"
+        query += (
+            f" ORDER BY created_at DESC LIMIT {per_page} OFFSET {(page-1)*per_page}"
+        )
         cur.execute(query, params)
         rows = cur.fetchall()
         cols = [d[0] for d in cur.description]
@@ -34,12 +54,26 @@ async def get_schema_history():
     """Null rates across runs for drift detection."""
     try:
         import psycopg2
+
         conn = psycopg2.connect(os.getenv("DATABASE_URL_SYNC", ""))
         cur = conn.cursor()
-        cur.execute("SELECT run_id, column_name, null_rate, data_type, is_structural_na FROM schema_history ORDER BY created_at DESC LIMIT 500")
+        cur.execute(
+            "SELECT run_id, column_name, null_rate, data_type, is_structural_na FROM schema_history ORDER BY created_at DESC LIMIT 500"
+        )
         rows = cur.fetchall()
         conn.close()
-        return {"history": [{"run_id": r[0], "column": r[1], "null_rate": r[2], "data_type": r[3], "is_structural_na": r[4]} for r in rows]}
+        return {
+            "history": [
+                {
+                    "run_id": r[0],
+                    "column": r[1],
+                    "null_rate": r[2],
+                    "data_type": r[3],
+                    "is_structural_na": r[4],
+                }
+                for r in rows
+            ]
+        }
     except Exception as e:
         return {"history": [], "error": str(e)}
 
@@ -49,6 +83,7 @@ async def get_models():
     """MLflow registered models and metrics."""
     try:
         import psycopg2
+
         conn = psycopg2.connect(os.getenv("DATABASE_URL_SYNC", ""))
         cur = conn.cursor()
         cur.execute("SELECT * FROM model_results ORDER BY created_at DESC LIMIT 20")
@@ -62,8 +97,31 @@ async def get_models():
 
 @router.get("/neighborhood-stats")
 async def get_neighborhood_stats():
-    """Aggregated stats per neighborhood."""
-    return {"stats": [], "message": "Run pipeline first to populate neighborhood statistics"}
+    """Aggregated stats per neighborhood from raw CSV data."""
+    csv_path = "/app/data/AmesHousing.csv"
+    if not os.path.exists(csv_path):
+        return {"stats": [], "message": "Dataset not found"}
+    try:
+        df = pd.read_csv(csv_path)
+        stats = (
+            df.groupby("Neighborhood")["SalePrice"]
+            .agg(["median", "mean", "std", "count", "min", "max"])
+            .reset_index()
+            .sort_values("median", ascending=False)
+        )
+        stats.columns = [
+            "neighborhood",
+            "median_price",
+            "mean_price",
+            "std_price",
+            "transaction_count",
+            "min_price",
+            "max_price",
+        ]
+        stats = stats.fillna(0).round(2)
+        return {"stats": stats.to_dict(orient="records")}
+    except Exception as e:
+        return {"stats": [], "error": str(e)}
 
 
 @router.get("/processed-data")
@@ -71,37 +129,44 @@ async def get_processed_data(page: int = 1, per_page: int = 50):
     """Paginated processed dataset."""
     return {"data": [], "page": page, "message": "Run pipeline first"}
 
+
 @router.get("/latest-metrics")
 async def get_latest_metrics():
     """Get overall metrics from the latest successful run."""
     try:
         import psycopg2
+
         conn = psycopg2.connect(os.getenv("DATABASE_URL_SYNC", ""))
         cur = conn.cursor()
-        
-        cur.execute("SELECT run_id, rows_out FROM pipeline_runs WHERE status='SUCCESS' ORDER BY started_at DESC LIMIT 1")
+
+        cur.execute(
+            "SELECT run_id, rows_out FROM pipeline_runs WHERE status='SUCCESS' ORDER BY started_at DESC LIMIT 1"
+        )
         run_row = cur.fetchone()
         if not run_row:
             return {"metrics": {}}
-            
+
         run_id, rows_processed = run_row
-        
+
         cur.execute("SELECT COUNT(*) FROM anomaly_log")
         anomalies_count = cur.fetchone()[0]
-        
-        cur.execute("SELECT test_rmse, test_r2 FROM model_results WHERE run_id=%s AND is_best=TRUE", (run_id,))
+
+        cur.execute(
+            "SELECT test_rmse, test_r2 FROM model_results WHERE run_id=%s AND is_best=TRUE",
+            (run_id,),
+        )
         model_row = cur.fetchone()
         best_rmse, best_r2 = model_row if model_row else (0, 0)
-        
+
         conn.close()
         return {
             "metrics": {
                 "rows_processed": rows_processed,
-                "features_count": 128, # Hardcoded as feature agent always emits around 128 total features or adds 12
+                "features_count": 128,
                 "anomalies_count": anomalies_count,
                 "best_rmse": best_rmse,
                 "best_r2": best_r2,
-                "knowledge_chunks": 10
+                "knowledge_chunks": _get_knowledge_chunk_count(),
             }
         }
     except Exception as e:

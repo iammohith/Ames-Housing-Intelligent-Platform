@@ -1,16 +1,20 @@
 """
 Pipeline API Routes — trigger, status, cancel, history.
 """
+
 from __future__ import annotations
+
 import asyncio
 import uuid
 from datetime import datetime
 from typing import Dict
-from fastapi import APIRouter, Depends, BackgroundTasks
-from core.event_bus import event_bus
-from core.schemas import RunPipelineResponse, PipelineStatusResponse, AgentStatus
-from core.metrics import pipeline_runs_total, pipeline_currently_running
+
 from api.middleware import verify_api_key
+from core.event_bus import event_bus
+from core.metrics import pipeline_currently_running, pipeline_runs_total
+from core.schemas import (AgentStatus, PipelineStatusResponse,
+                          RunPipelineResponse)
+from fastapi import APIRouter, BackgroundTasks, Depends
 
 router = APIRouter()
 
@@ -20,14 +24,14 @@ _running_pipelines: Dict[str, dict] = {}
 
 async def _execute_pipeline(run_id: str):
     """Execute the full 8-agent pipeline."""
-    from agents.ingestion_agent import IngestionAgent
-    from agents.schema_agent import SchemaAgent
-    from agents.cleaning_agent import CleaningAgent
-    from agents.feature_agent import FeatureAgent
-    from agents.encoding_agent import EncodingAgent
     from agents.anomaly_agent import AnomalyAgent
+    from agents.cleaning_agent import CleaningAgent
+    from agents.encoding_agent import EncodingAgent
+    from agents.feature_agent import FeatureAgent
+    from agents.ingestion_agent import IngestionAgent
     from agents.ml_agent import MLAgent
     from agents.orchestration_agent import OrchestrationAgent
+    from agents.schema_agent import SchemaAgent
     from core.schemas import IngestionInput
 
     pipeline_currently_running.set(1)
@@ -35,6 +39,7 @@ async def _execute_pipeline(run_id: str):
 
     try:
         from core.dag import DAGOrchestrator
+
         agents_map = {
             "ingestion_agent": IngestionAgent(event_bus, run_id),
             "schema_agent": SchemaAgent(event_bus, run_id),
@@ -55,7 +60,7 @@ async def _execute_pipeline(run_id: str):
         else:
             pipeline_runs_total.labels(status="failure").inc()
             _running_pipelines[run_id]["status"] = "FAILED"
-            
+
         _running_pipelines[run_id]["result"] = final
 
     except Exception as e:
@@ -67,7 +72,9 @@ async def _execute_pipeline(run_id: str):
 
 
 @router.post("/run-pipeline", response_model=RunPipelineResponse)
-async def run_pipeline(background_tasks: BackgroundTasks, api_key: str = Depends(verify_api_key)):
+async def run_pipeline(
+    background_tasks: BackgroundTasks, api_key: str = Depends(verify_api_key)
+):
     run_id = str(uuid.uuid4())[:12]
     background_tasks.add_task(_execute_pipeline, run_id)
     return RunPipelineResponse(run_id=run_id, message="Pipeline started")
@@ -108,28 +115,40 @@ async def cancel_pipeline(run_id: str, api_key: str = Depends(verify_api_key)):
 @router.get("/pipeline-runs")
 async def get_pipeline_runs():
     try:
-        import psycopg2
         import os
+
+        import psycopg2
+
         conn = psycopg2.connect(os.getenv("DATABASE_URL_SYNC", ""))
         cur = conn.cursor()
-        cur.execute("SELECT run_id, status, started_at FROM pipeline_runs ORDER BY started_at DESC LIMIT 20")
+        cur.execute(
+            "SELECT run_id, status, started_at FROM pipeline_runs ORDER BY started_at DESC LIMIT 20"
+        )
         rows = cur.fetchall()
         conn.close()
         runs = []
         for r in rows:
-            runs.append({
-                "run_id": r[0],
-                "status": r[1],
-                "started_at": r[2].isoformat() if r[2] else None,
-            })
+            runs.append(
+                {
+                    "run_id": r[0],
+                    "status": r[1],
+                    "started_at": r[2].isoformat() if r[2] else None,
+                }
+            )
         return {"runs": runs}
     except Exception as e:
         # Fallback to memory if DB fails
         runs = []
         for rid, data in _running_pipelines.items():
-            runs.append({
-                "run_id": rid,
-                "status": data.get("status"),
-                "started_at": data.get("started_at", "").isoformat() if data.get("started_at") else None,
-            })
+            runs.append(
+                {
+                    "run_id": rid,
+                    "status": data.get("status"),
+                    "started_at": (
+                        data.get("started_at", "").isoformat()
+                        if data.get("started_at")
+                        else None
+                    ),
+                }
+            )
         return {"runs": runs}
