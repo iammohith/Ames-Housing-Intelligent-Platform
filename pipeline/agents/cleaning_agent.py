@@ -117,8 +117,20 @@ class CleaningAgent(BaseAgent):
         # Step 3 — Row-level drops (Electrical null)
         rows_before_drop = len(df)
         if "Electrical" in df.columns:
+            dropped_indices = df[df["Electrical"].isnull()].index.tolist()
             df = df.dropna(subset=["Electrical"])
-        rows_dropped = rows_before_drop - len(df)
+            rows_dropped = rows_before_drop - len(df)
+            
+            # Log detailed information about dropped rows
+            if rows_dropped > 0:
+                import structlog
+                logger = structlog.get_logger()
+                logger.info(
+                    f"Dropped {rows_dropped} row(s) due to null Electrical",
+                    run_id=self.run_id,
+                    dropped_indices=dropped_indices[:10],  # Log first 10
+                    total_dropped=rows_dropped,
+                )
 
         await self.emit(
             AgentStatus.PROGRESS,

@@ -11,7 +11,10 @@ import pandas as pd
 import pytest
 
 # Add pipeline to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
+pipeline_path = os.path.join(os.path.dirname(__file__), "..", "pipeline")
+if not os.path.exists(pipeline_path):
+    pipeline_path = os.path.join(os.path.dirname(__file__), "..")
+sys.path.insert(0, pipeline_path)
 
 
 @pytest.fixture

@@ -107,3 +107,18 @@ for _agent in _AGENT_NAMES:
     agent_runs_total.labels(agent_name=_agent, status="success")
     agent_runs_total.labels(agent_name=_agent, status="failure")
     agent_duration_seconds.labels(agent_name=_agent)
+
+# Pre-register gauge metrics so they appear in Prometheus before first value is set
+_MODEL_NAMES = ["ridge", "xgboost", "lightgbm"]
+_SPLITS = ["val", "test"]
+for _model in _MODEL_NAMES:
+    for _split in _SPLITS:
+        model_rmse.labels(model_name=_model, split=_split).set(0)
+        model_r2.labels(model_name=_model, split=_split).set(0)
+        model_mae.labels(model_name=_model, split=_split).set(0)
+
+# Initialize gauges with 0
+anomalies_detected_total.set(0)
+knowledge_base_chunks_total.set(0)
+pipeline_currently_running.set(0)
+rows_processed_last_run.set(0)

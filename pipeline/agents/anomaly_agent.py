@@ -24,7 +24,10 @@ ANOMALY_FEATURES = [
     "TotalSF",
     "Overall Qual",
 ]
-ZSCORE_THRESHOLD = 3.5
+# Configuration thresholds (now configurable via environment variables)
+ZSCORE_THRESHOLD = float(os.getenv("ANOMALY_ZSCORE_THRESHOLD", "3.5"))
+ISO_SCORE_HIGH_SEVERITY = float(os.getenv("ANOMALY_ISO_SCORE_HIGH", "-0.3"))
+ISO_SCORE_MEDIUM_SEVERITY = float(os.getenv("ANOMALY_ISO_SCORE_MEDIUM", "-0.1"))
 
 
 class AnomalyAgent(BaseAgent):
@@ -90,10 +93,10 @@ class AnomalyAgent(BaseAgent):
 
             iso_score = float(iforest_scores[df.index.get_loc(idx)])
 
-            # Severity classification
-            if idx in both_flagged and iso_score < -0.3:
+            # Severity classification (using configurable thresholds)
+            if idx in both_flagged and iso_score < ISO_SCORE_HIGH_SEVERITY:
                 severity = AnomalySeverity.HIGH
-            elif len(methods) == 1 or -0.3 <= iso_score < -0.1:
+            elif len(methods) == 1 or ISO_SCORE_HIGH_SEVERITY <= iso_score < ISO_SCORE_MEDIUM_SEVERITY:
                 severity = AnomalySeverity.MEDIUM
             else:
                 severity = AnomalySeverity.LOW

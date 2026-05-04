@@ -5,6 +5,7 @@ Post-pipeline tasks: knowledge base building and database persistence.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import datetime
 
@@ -52,7 +53,11 @@ class OrchestrationAgent(BaseAgent):
             from core.knowledge_builder import KnowledgeBuilder
 
             kb = KnowledgeBuilder()
-            knowledge_chunks = await kb.build(results, self.run_id)
+            # Run knowledge builder in thread pool to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            knowledge_chunks = await loop.run_in_executor(
+                None, kb.build, results, self.run_id
+            )
             knowledge_base_chunks_total.set(knowledge_chunks)
             await self.emit(
                 AgentStatus.PROGRESS,
@@ -191,3 +196,10 @@ class OrchestrationAgent(BaseAgent):
             conn.close()
         except Exception as e:
             self.log.warning("DB persistence failed", error=str(e))
+    
+    def _get_df(self, input_data) -> pd.DataFrame:
+        """Orchestration agent doesn't need DataFrame — it's the final aggregator."""
+        # This is the final agent; it works with results dict, not DataFrame
+        # Return a dummy empty DataFrame if needed for interface compliance
+        import pandas as pd
+        return pd.DataFrame()

@@ -112,3 +112,9 @@ class IngestionAgent(BaseAgent[IngestionInput, IngestionOutput]):
             return count > 0
         except Exception:
             return False
+    
+    def _get_df(self, input_data) -> pd.DataFrame:
+        """Ingestion agent is the first step — it reads CSV directly."""
+        if hasattr(self, '_df') and self._df is not None:
+            return self._df
+        raise ValueError("Ingestion agent must execute before calling _get_df")

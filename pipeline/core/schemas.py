@@ -60,8 +60,8 @@ class AgentEvent(BaseModel):
 
 class IngestionInput(BaseModel):
     csv_path: str = "/app/data/AmesHousing.csv"
-    expected_rows: int = 2930
-    expected_cols: int = 82
+    expected_rows: int = Field(ge=1, default=2930, description="Expected number of rows (configurable for datasets with different sizes)")
+    expected_cols: int = Field(ge=1, default=82, description="Expected number of columns (configurable for datasets with different schemas)")
 
 
 class IngestionOutput(BaseModel):
@@ -325,15 +325,29 @@ class PipelineStatusResponse(BaseModel):
 
 class PredictRequest(BaseModel):
     overall_qual: int = Field(ge=1, le=10)
+    overall_cond: int = Field(ge=1, le=9, default=5)
     gr_liv_area: float = Field(gt=0)
     year_built: int = Field(ge=1800, le=2030)
-    total_bathrooms: float = Field(ge=0)
+    year_remod: int = Field(ge=1800, le=2030, default=0)
+    garage_yr_blt: int = Field(ge=1800, le=2030, default=0)
     neighborhood: str = "NAmes"
     garage_area: float = 0
     total_bsmt_sf: float = 0
     first_flr_sf: float = 0
+    second_flr_sf: float = 0
     full_bath: int = 1
+    half_bath: int = 0
+    bsmt_full_bath: int = 0
+    bsmt_half_bath: int = 0
+    pool_area: float = 0
+    fireplaces: int = 0
+    wood_deck_sf: float = 0
+    open_porch_sf: float = 0
+    enclosed_porch: float = 0
+    three_ssn_porch: float = 0
+    screen_porch: float = 0
     fireplace_qu: str = "None"
+    sale_year: int = Field(ge=1800, le=2030, default=2010)  # Added: dynamic sale year for age calculations
 
 
 class PredictResponse(BaseModel):

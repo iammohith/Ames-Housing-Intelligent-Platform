@@ -5,9 +5,13 @@ Pipeline API Routes — trigger, status, cancel, history.
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import uuid
 from datetime import datetime
 from typing import Dict
+
+import psycopg2
 
 from api.middleware import verify_api_key
 from core.event_bus import event_bus
@@ -22,8 +26,43 @@ router = APIRouter()
 _running_pipelines: Dict[str, dict] = {}
 
 
+async def _save_pipeline_to_db(run_id: str, status: str, data: dict = None):
+    """Persist pipeline state to PostgreSQL for recovery on restart."""
+    try:
+        db_url = os.getenv("DATABASE_URL_SYNC")
+        if not db_url:
+            return  # Silently skip if DB not configured
+        
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+        
+        started_at = data.get("started_at") if data else datetime.utcnow()
+        completed_at = data.get("completed_at") if data else None
+        duration_ms = data.get("duration_ms") if data else None
+        error_msg = data.get("error") if data else None
+        
+        # Use upsert to handle race conditions
+        cur.execute("""
+            INSERT INTO pipeline_runs 
+            (run_id, status, started_at, completed_at, duration_ms, error_message, dataset_hash)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (run_id) DO UPDATE SET
+                status = EXCLUDED.status,
+                completed_at = EXCLUDED.completed_at,
+                duration_ms = EXCLUDED.duration_ms,
+                error_message = EXCLUDED.error_message
+        """, (run_id, status, started_at, completed_at, duration_ms, error_msg, "current"))
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        # Log but don't fail - DB persistence is optional
+        import structlog
+        structlog.get_logger().warning(f"Failed to persist pipeline state to DB: {e}")
+
+
 async def _execute_pipeline(run_id: str):
-    """Execute the full 8-agent pipeline."""
+    """Execute the full 8-agent pipeline with database persistence."""
     from agents.anomaly_agent import AnomalyAgent
     from agents.cleaning_agent import CleaningAgent
     from agents.encoding_agent import EncodingAgent
@@ -36,6 +75,7 @@ async def _execute_pipeline(run_id: str):
 
     pipeline_currently_running.set(1)
     _running_pipelines[run_id] = {"status": "RUNNING", "started_at": datetime.utcnow()}
+    await _save_pipeline_to_db(run_id, "RUNNING", _running_pipelines[run_id])
 
     try:
         from core.dag import DAGOrchestrator
@@ -62,11 +102,15 @@ async def _execute_pipeline(run_id: str):
             _running_pipelines[run_id]["status"] = "FAILED"
 
         _running_pipelines[run_id]["result"] = final
+        _running_pipelines[run_id]["completed_at"] = datetime.utcnow()
+        await _save_pipeline_to_db(run_id, _running_pipelines[run_id]["status"], _running_pipelines[run_id])
 
     except Exception as e:
         pipeline_runs_total.labels(status="failure").inc()
         _running_pipelines[run_id]["status"] = "FAILED"
         _running_pipelines[run_id]["error"] = str(e)
+        _running_pipelines[run_id]["completed_at"] = datetime.utcnow()
+        await _save_pipeline_to_db(run_id, "FAILED", _running_pipelines[run_id])
     finally:
         pipeline_currently_running.set(0)
 
@@ -115,11 +159,23 @@ async def cancel_pipeline(run_id: str, api_key: str = Depends(verify_api_key)):
 @router.get("/pipeline-runs")
 async def get_pipeline_runs():
     try:
-        import os
-
-        import psycopg2
-
-        conn = psycopg2.connect(os.getenv("DATABASE_URL_SYNC", ""))
+        db_url = os.getenv("DATABASE_URL_SYNC")
+        if not db_url:
+            # Return in-memory data if DB not configured
+            runs = []
+            for rid, data in _running_pipelines.items():
+                runs.append({
+                    "run_id": rid,
+                    "status": data.get("status"),
+                    "started_at": (
+                        data.get("started_at", "").isoformat()
+                        if data.get("started_at")
+                        else None
+                    ),
+                })
+            return {"runs": runs}
+        
+        conn = psycopg2.connect(db_url)
         cur = conn.cursor()
         cur.execute(
             "SELECT run_id, status, started_at FROM pipeline_runs ORDER BY started_at DESC LIMIT 20"
@@ -138,6 +194,8 @@ async def get_pipeline_runs():
         return {"runs": runs}
     except Exception as e:
         # Fallback to memory if DB fails
+        import structlog
+        structlog.get_logger().warning(f"Failed to fetch pipeline runs from DB: {e}")
         runs = []
         for rid, data in _running_pipelines.items():
             runs.append(

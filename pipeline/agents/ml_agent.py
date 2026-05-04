@@ -192,8 +192,27 @@ class MLAgent(BaseAgent):
                 AgentStatus.PROGRESS,
                 f"Computing SHAP values on {len(X_test)} test properties...",
             )
-            explainer = shap.TreeExplainer(best_model)
-            shap_values = explainer.shap_values(X_test)
+            
+            # Use appropriate explainer based on model type
+            # TreeExplainer only works with tree models (XGBoost, LightGBM)
+            if best_model_name in ["xgboost", "lightgbm"]:
+                explainer = shap.TreeExplainer(best_model)
+                shap_values = explainer.shap_values(X_test)
+            elif best_model_name == "ridge":
+                # KernelExplainer for linear models requires fewer background samples
+                background_samples = min(100, len(X_train))
+                explainer = shap.KernelExplainer(
+                    best_model.predict,
+                    shap.sample(X_train, background_samples)
+                )
+                shap_values = explainer.shap_values(X_test[:50])  # Limit for performance
+            else:
+                # Fallback for any other model type
+                explainer = shap.KernelExplainer(
+                    best_model.predict,
+                    X_test[:50]
+                )
+                shap_values = explainer.shap_values(X_test[:50])
 
             base_artifacts = os.getenv("ARTIFACTS_DIR", "/app/artifacts")
             shap_dir = f"{base_artifacts}/shap/{self.run_id}"
@@ -215,10 +234,15 @@ class MLAgent(BaseAgent):
         except Exception as e:
             await self.emit(AgentStatus.WARNING, f"SHAP computation skipped: {e}")
 
-        # Save best model
+        # Save best model (ensure all artifact directories exist)
         base_artifacts = os.getenv("ARTIFACTS_DIR", "/app/artifacts")
         model_dir = f"{base_artifacts}/models/{self.run_id}"
-        os.makedirs(model_dir, exist_ok=True)
+        encoder_dir = f"{base_artifacts}/encoders/{self.run_id}"
+        
+        # Pre-create all directories to prevent silent failures
+        os.makedirs(model_dir, exist_ok=True, mode=0o755)
+        os.makedirs(encoder_dir, exist_ok=True, mode=0o755)
+        
         import pickle
 
         with open(os.path.join(model_dir, "best_model.pkl"), "wb") as f:

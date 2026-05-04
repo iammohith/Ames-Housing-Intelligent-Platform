@@ -8,34 +8,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from agents.base_agent import BaseAgent
+from core.feature_engineering import FEATURE_DEFINITIONS, engineer_features
 from core.schemas import AgentStatus, FeatureManifestEntry, FeatureOutput
-
-FEATURE_DEFINITIONS = [
-    (
-        "TotalSF",
-        "TotalBsmtSF + 1stFlrSF + 2ndFlrSF",
-        "Combined livable space is primary value driver",
-    ),
-    (
-        "PorchSF",
-        "WoodDeckSF + OpenPorchSF + EnclosedPorch + 3SsnPorch + ScreenPorch",
-        "Outdoor usable space adds marginal value",
-    ),
-    ("HouseAge", "YrSold - YearBuilt", "Relative age prevents temporal leakage"),
-    ("RemodAge", "YrSold - YearRemod/Add", "Recency of remodel affects value"),
-    ("GarageAge", "YrSold - GarageYrBlt", "Garage condition proxy"),
-    (
-        "TotalBathrooms",
-        "FullBath + 0.5*HalfBath + BsmtFullBath + 0.5*BsmtHalfBath",
-        "Half-bath = 0.5 full-bath equivalent",
-    ),
-    ("HasPool", "PoolArea > 0", "Presence more predictive than raw area"),
-    ("HasGarage", "GarageArea > 0", "Binary garage presence"),
-    ("HasBasement", "TotalBsmtSF > 0", "Binary basement presence"),
-    ("HasFireplace", "Fireplaces > 0", "Binary fireplace presence"),
-    ("IsNew", "YearBuilt == YrSold", "New construction premium"),
-    ("OverallScore", "OverallQual * OverallCond", "Quality × condition interaction"),
-]
 
 
 class FeatureAgent(BaseAgent):
@@ -49,55 +23,30 @@ class FeatureAgent(BaseAgent):
             AgentStatus.PROGRESS, "Engineering 12 features from domain knowledge"
         )
 
+        # Use shared feature engineering module (single source of truth)
+        df = engineer_features(df)
+
         manifest = []
 
-        # Area composites
-        df["TotalSF"] = df["Total Bsmt SF"] + df["1st Flr SF"] + df["2nd Flr SF"]
-        df["PorchSF"] = (
-            df["Wood Deck SF"]
-            + df["Open Porch SF"]
-            + df["Enclosed Porch"]
-            + df["3Ssn Porch"]
-            + df["Screen Porch"]
-        )
+        # Log feature engineering results
         r_total = df["TotalSF"].corr(df["SalePrice"])
         r_porch = df["PorchSF"].corr(df["SalePrice"])
         await self.emit(
             AgentStatus.PROGRESS, f"Area composites: TotalSF (r={r_total:.3f}) ✓"
         )
 
-        # Age features (relative to sale year)
-        df["HouseAge"] = df["Yr Sold"] - df["Year Built"]
-        df["RemodAge"] = df["Yr Sold"] - df["Year Remod/Add"]
-        df["GarageAge"] = df["Yr Sold"] - df["Garage Yr Blt"]
-        df["GarageAge"] = df["GarageAge"].fillna(df["HouseAge"])
         await self.emit(
             AgentStatus.PROGRESS,
             "Age features: HouseAge, RemodAge, GarageAge — leakage-safe ✓",
         )
 
-        # Bathroom composite
-        df["TotalBathrooms"] = (
-            df["Full Bath"]
-            + 0.5 * df["Half Bath"]
-            + df["Bsmt Full Bath"]
-            + 0.5 * df["Bsmt Half Bath"]
-        )
         await self.emit(AgentStatus.PROGRESS, "Bathroom composite: TotalBathrooms ✓")
 
-        # Binary presence flags
-        df["HasPool"] = (df["Pool Area"] > 0).astype(int)
-        df["HasGarage"] = (df["Garage Area"] > 0).astype(int)
-        df["HasBasement"] = (df["Total Bsmt SF"] > 0).astype(int)
-        df["HasFireplace"] = (df["Fireplaces"] > 0).astype(int)
-        df["IsNew"] = (df["Year Built"] == df["Yr Sold"]).astype(int)
         await self.emit(
             AgentStatus.PROGRESS,
             "Presence flags: HasPool, HasGarage, HasBasement, HasFireplace, IsNew ✓",
         )
-
-        # Interaction feature
-        df["OverallScore"] = df["Overall Qual"] * df["Overall Cond"]
+        
         await self.emit(AgentStatus.PROGRESS, "Interaction: OverallScore ✓")
 
         # Build manifest with correlations

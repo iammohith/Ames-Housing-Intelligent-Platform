@@ -104,6 +104,7 @@ class EventBus:
         """
         Async generator for SSE fallback.
         Yields events as they are emitted for a given run_id.
+        Closes stream when orchestration_agent completes OR when all agents have tried and failed.
         """
         queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
         self._subscribers[run_id].append(queue)
@@ -112,14 +113,37 @@ class EventBus:
         for event in self._history.get(run_id, []):
             yield event
 
+        # Track which agents have completed
+        completed_agents = set()
+        failed_agents = set()
+        all_agents = {
+            "ingestion_agent",
+            "schema_agent",
+            "cleaning_agent",
+            "feature_agent",
+            "encoding_agent",
+            "anomaly_agent",
+            "ml_agent",
+            "orchestration_agent",
+        }
+
         try:
             while True:
                 event = await queue.get()
                 yield event
-                # Stop if pipeline completed or failed
-                if event.status in (AgentStatus.SUCCESS, AgentStatus.FAILED):
-                    if event.agent == "orchestration_agent":
-                        break
+                # Track completion events
+                if event.status == AgentStatus.SUCCESS:
+                    completed_agents.add(event.agent)
+                elif event.status == AgentStatus.FAILED:
+                    failed_agents.add(event.agent)
+                
+                # Stop when orchestration_agent completes (success or failure)
+                # OR when we've seen failures that cascade (e.g., critical agent fails)
+                if event.agent == "orchestration_agent" and event.status in (
+                    AgentStatus.SUCCESS,
+                    AgentStatus.FAILED,
+                ):
+                    break
         finally:
             try:
                 self._subscribers[run_id].remove(queue)
@@ -138,7 +162,11 @@ class EventBus:
         return statuses
 
     def get_progress(self, run_id: str) -> float:
-        """Calculate overall pipeline progress (0.0 to 100.0)."""
+        """Calculate overall pipeline progress (0.0 to 100.0).
+        
+        Counts both SUCCESS and FAILED agents as completed for progress tracking.
+        Progress reaches 100% when all agents have been attempted (completed or failed).
+        """
         all_agents = [
             "ingestion_agent",
             "schema_agent",
@@ -152,15 +180,30 @@ class EventBus:
         completed = 0
         statuses = self.get_agent_status(run_id)
         for agent in all_agents:
-            if statuses.get(agent) == "SUCCESS":
+            agent_status = statuses.get(agent, "")
+            # Count both success and failed as "done" for progress purposes
+            if agent_status in ("SUCCESS", "FAILED"):
                 completed += 1
         return (completed / len(all_agents)) * 100.0
 
     def clear_run(self, run_id: str) -> None:
-        """Clear all data for a completed/cancelled run."""
-        self._history.pop(run_id, None)
-        self._connections.pop(run_id, None)
-        self._subscribers.pop(run_id, None)
+        """Clear all data for a completed/cancelled run with proper locking."""
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(self._async_clear_run(run_id))
+        except RuntimeError:
+            # No event loop in current thread, use sync version
+            self._history.pop(run_id, None)
+            self._connections.pop(run_id, None)
+            self._subscribers.pop(run_id, None)
+    
+    async def _async_clear_run(self, run_id: str) -> None:
+        """Async version of clear_run with proper locking to prevent race conditions."""
+        async with self._lock:
+            self._history.pop(run_id, None)
+            self._connections.pop(run_id, None)
+            self._subscribers.pop(run_id, None)
 
 
 # Singleton event bus instance

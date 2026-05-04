@@ -18,7 +18,11 @@ class KnowledgeBuilder:
     CHUNK_SIZE = 512
     CHUNK_OVERLAP = 50
 
-    async def build(self, pipeline_results: Dict[str, Any], run_id: str) -> int:
+    def build(self, pipeline_results: dict, run_id: str) -> int:
+        """
+        Build knowledge base from pipeline results.
+        Synchronous method: all operations are CPU-bound (no I/O or async operations).
+        """
         documents = self._generate_documents(pipeline_results)
         chunks = self._chunk_documents(documents)
 
@@ -214,20 +218,58 @@ class KnowledgeBuilder:
         )
 
     def _chunk_documents(self, documents: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """
+        MAANG-level chunking: Preserve semantic boundaries and avoid context loss.
+        - Use sentence-aware splitting instead of word count
+        - Maintain overlaps that include full sentences
+        - Add document headers for context preservation
+        """
         chunks = []
         for doc in documents:
             content = doc["content"]
-            words = content.split()
-            for i in range(0, len(words), self.CHUNK_SIZE - self.CHUNK_OVERLAP):
-                chunk_words = words[i : i + self.CHUNK_SIZE]
-                if chunk_words:
-                    chunks.append(
-                        {
-                            "title": doc["title"],
-                            "content": " ".join(chunk_words),
-                            "chunk_index": len(chunks),
-                        }
-                    )
+            title = doc["title"]
+            
+            # Add document header for better retrieval context
+            full_content = f"DOCUMENT: {title}\n\n{content}"
+            
+            # Split on sentence boundaries (. ! ? followed by space)
+            import re
+            sentences = re.split(r'(?<=[.!?])\s+', full_content)
+            
+            # Group sentences into chunks maintaining semantic cohesion
+            current_chunk_words = []
+            chunk_word_count = 0
+            
+            for sentence in sentences:
+                sentence_words = sentence.split()
+                sentence_word_count = len(sentence_words)
+                
+                # If adding this sentence exceeds limit, save current chunk and start new one
+                if chunk_word_count + sentence_word_count > self.CHUNK_SIZE and current_chunk_words:
+                    chunk_text = " ".join(current_chunk_words)
+                    chunks.append({
+                        "title": title,
+                        "content": chunk_text,
+                        "chunk_index": len(chunks),
+                    })
+                    
+                    # Create overlap: include previous sentences for context
+                    overlap_words = current_chunk_words[-20:]  # Last 20 words as overlap
+                    current_chunk_words = overlap_words + sentence_words
+                    chunk_word_count = len(current_chunk_words)
+                else:
+                    current_chunk_words.extend(sentence_words)
+                    chunk_word_count += sentence_word_count
+            
+            # Add final chunk
+            if current_chunk_words:
+                chunk_text = " ".join(current_chunk_words)
+                chunks.append({
+                    "title": title,
+                    "content": chunk_text,
+                    "chunk_index": len(chunks),
+                })
+        
         return chunks
 
     def _index_chunks(self, chunks, run_id: str) -> int:

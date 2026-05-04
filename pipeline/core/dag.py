@@ -40,10 +40,55 @@ class DAGOrchestrator:
     """
 
     def __init__(self, agents: Dict[str, Any], event_bus: EventBus):
+        # Validate all required agents are present
+        required_agents = set(DAG.keys())
+        provided_agents = set(agents.keys())
+        missing_agents = required_agents - provided_agents
+        extra_agents = provided_agents - required_agents
+        
+        if missing_agents:
+            raise ValueError(
+                f"Missing required agents: {missing_agents}. "
+                f"Expected: {required_agents}"
+            )
+        
+        if extra_agents:
+            logger.warning(f"Extra agents provided (will be ignored): {extra_agents}")
+        
+        # Validate DAG is acyclic using topological sort (DFS with recursion stack)
+        self._validate_dag_is_acyclic()
+        
         self.agents = agents
         self.event_bus = event_bus
         self.completed: Set[str] = set()
         self.results: Dict[str, Any] = {}
+    
+    def _validate_dag_is_acyclic(self) -> None:
+        """Ensure the DAG has no cycles using depth-first search."""
+        visited: Set[str] = set()
+        rec_stack: Set[str] = set()
+        
+        def has_cycle(node: str) -> bool:
+            visited.add(node)
+            rec_stack.add(node)
+            
+            for neighbor in DAG.get(node, []):
+                if neighbor not in visited:
+                    if has_cycle(neighbor):
+                        return True
+                elif neighbor in rec_stack:
+                    return True
+            
+            rec_stack.remove(node)
+            return False
+        
+        for node in DAG:
+            if node not in visited:
+                if has_cycle(node):
+                    raise ValueError(
+                        f"Circular dependency detected in DAG at node {node}. "
+                        f"Ensure all agent dependencies form an acyclic graph."
+                    )
 
     async def run_pipeline(self, run_id: str) -> PipelineResult:
         start_time = time.time()

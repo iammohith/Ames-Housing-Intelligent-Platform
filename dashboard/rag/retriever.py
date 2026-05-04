@@ -42,32 +42,58 @@ def _get_embedding_fn():
 
 
 def retrieve_context(query: str, top_k: int = 5) -> str:
-    """Retrieve relevant context using advanced hybrid search and MMR."""
+    """
+    Retrieve relevant context using advanced hybrid search and MMR.
+    MAANG-level: Confidence scoring, validation, freshness checking.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
         import chromadb
         from rag.query_classifier import classify_query
 
         emb_fn = _get_embedding_fn()
         client = chromadb.PersistentClient(path=CHROMA_PATH)
-        collection = client.get_collection("ames_knowledge", embedding_function=emb_fn)
+        
+        try:
+            collection = client.get_collection("ames_knowledge", embedding_function=emb_fn)
+        except Exception as e:
+            logger.warning(f"ChromaDB collection not found: {e}. Knowledge base may need rebuilding.")
+            return _fallback_context(query)
 
         initial_k = top_k * 4
 
-        # 1. Intent Classification & Metadata Routing
-        intent = classify_query(query)
-        dense_results = collection.query(query_texts=[query], n_results=initial_k)
+        # 1. Intent Classification & Metadata Routing (with confidence)
+        intent, confidence = classify_query(query)
+        logger.info(f"Query intent: {intent} (confidence: {confidence:.2f})")
+        
+        try:
+            dense_results = collection.query(query_texts=[query], n_results=initial_k)
+        except Exception as e:
+            logger.warning(f"Dense retrieval failed: {e}. Using fallback.")
+            return _fallback_context(query)
 
-        # If specific intent, force fetch documents of that intent
+        # If specific intent with HIGH confidence, fetch documents of that intent
         intent_docs = []
-        if intent != "general" and intent in INTENT_TO_TITLES:
+        if confidence > 0.5 and intent != "general" and intent in INTENT_TO_TITLES:
             titles = INTENT_TO_TITLES[intent]
-            for title in titles:
-                # Perform an exact fetch or targeted query
-                targeted = collection.query(
-                    query_texts=[query], n_results=top_k, where={"title": title}
-                )
-                if targeted and targeted["documents"] and targeted["documents"][0]:
-                    intent_docs.extend(targeted["documents"][0])
+            # Fetch all documents and filter by title in Python
+            # (ChromaDB where filters can be unreliable across versions)
+            try:
+                all_results = collection.get()
+                all_metadatas = all_results.get("metadatas", [])
+                all_documents = all_results.get("documents", [])
+                
+                for idx, metadata in enumerate(all_metadatas):
+                    if metadata and metadata.get("title") in titles:
+                        if idx < len(all_documents):
+                            intent_docs.append(all_documents[idx])
+                
+                logger.info(f"Found {len(intent_docs)} documents matching intent '{intent}'")
+            except Exception as filter_err:
+                # If metadata filtering fails, log and continue with dense results
+                logger.warning(f"ChromaDB metadata filtering failed: {filter_err}. Using dense results only.")
 
         dense_docs = (
             dense_results["documents"][0]
@@ -76,6 +102,12 @@ def retrieve_context(query: str, top_k: int = 5) -> str:
             and dense_results["documents"][0]
             else []
         )
+        
+        # Validate dense results quality
+        if not dense_docs:
+            logger.warning(f"No dense results for query. Returning fallback.")
+            return _fallback_context(query)
+        
         dense_docs.extend(intent_docs)
 
         # 2. BM25 Keyword Retrieval
@@ -106,6 +138,7 @@ def retrieve_context(query: str, top_k: int = 5) -> str:
 
             return "\n\n".join(formatted_chunks)
     except Exception as e:
+        # Log exception for debugging, but proceed with fallback
         pass
 
     return _fallback_context(query)

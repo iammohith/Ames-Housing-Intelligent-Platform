@@ -126,8 +126,52 @@ async def get_neighborhood_stats():
 
 @router.get("/processed-data")
 async def get_processed_data(page: int = 1, per_page: int = 50):
-    """Paginated processed dataset."""
-    return {"data": [], "page": page, "message": "Run pipeline first"}
+    """
+    Paginated processed dataset from the latest successful pipeline run.
+    Falls back to raw CSV if no pipeline has run yet.
+    """
+    try:
+        import psycopg2
+        
+        # Try to get latest successful run
+        conn = psycopg2.connect(os.getenv("DATABASE_URL_SYNC", ""))
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT run_id FROM pipeline_runs WHERE status='SUCCESS' ORDER BY completed_at DESC LIMIT 1"
+        )
+        run_row = cur.fetchone()
+        conn.close()
+        
+        df = None
+        if run_row:
+            run_id = run_row[0]
+            # Try to load processed data from artifacts
+            artifact_path = f"/app/artifacts/{run_id}/processed_data.csv"
+            if os.path.exists(artifact_path):
+                df = pd.read_csv(artifact_path)
+        
+        # Fallback to raw dataset
+        if df is None:
+            csv_path = "/app/data/AmesHousing.csv"
+            if not os.path.exists(csv_path):
+                return {"data": [], "page": page, "total": 0, "message": "No data available"}
+            df = pd.read_csv(csv_path)
+        
+        # Paginate
+        total_rows = len(df)
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        page_data = df.iloc[start_idx:end_idx]
+        
+        return {
+            "data": page_data.to_dict(orient="records"),
+            "page": page,
+            "per_page": per_page,
+            "total": total_rows,
+            "pages": (total_rows + per_page - 1) // per_page,
+        }
+    except Exception as e:
+        return {"data": [], "page": page, "error": str(e)}
 
 
 @router.get("/latest-metrics")

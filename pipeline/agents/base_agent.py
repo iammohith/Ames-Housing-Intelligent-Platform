@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Generic, TypeVar
 
+import pandas as pd
 import structlog
 from core.event_bus import EventBus
 from core.metrics import agent_duration_seconds, agent_runs_total
@@ -22,7 +23,7 @@ OutputT = TypeVar("OutputT", bound=BaseModel)
 
 
 class BaseAgent(ABC, Generic[InputT, OutputT]):
-    """Every agent implements this contract. Override execute(), never run()."""
+    """Every agent implements this contract. Override execute() and _get_df(), never run()."""
 
     name: str = "base_agent"
     version: str = "1.0.0"
@@ -46,6 +47,24 @@ class BaseAgent(ABC, Generic[InputT, OutputT]):
     @abstractmethod
     async def execute(self, input_data: InputT) -> OutputT:
         """Core agent logic — implemented by each agent."""
+        ...
+    
+    @abstractmethod
+    def _get_df(self, input_data) -> pd.DataFrame:
+        """
+        Extract DataFrame from input_data or previous agent results.
+        
+        Subclasses must implement this to retrieve the working DataFrame from either:
+        - Direct input (ingestion_agent only)
+        - dict of agent instances (all other agents, retrieved from upstream)
+        - dict of results (orchestration_agent)
+        
+        Returns:
+            pd.DataFrame: The working DataFrame for this agent
+            
+        Raises:
+            ValueError: If DataFrame cannot be located
+        """
         ...
 
     async def run(self, input_data: InputT) -> OutputT:
