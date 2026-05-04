@@ -10,7 +10,7 @@
 
 ---
 
-## 🎯 What This Is
+## What This Is
 
 An end-to-end ML platform that processes the **Ames Housing dataset** (2,930 properties, 82 features) through an 8-agent pipeline with:
 
@@ -97,7 +97,7 @@ Works on Intel x86-64, AMD64, and Apple Silicon (M1/M2/M3).
 
 ---
 
-## 📋 Dataset Ground Truth
+## Dataset Ground Truth
 
 Every cleaning and imputation decision is anchored in domain knowledge of the Ames Housing dataset:
 
@@ -115,7 +115,7 @@ Every cleaning and imputation decision is anchored in domain knowledge of the Am
 
 ---
 
-## 🔌 Full API Reference
+## Full API Reference
 
 ```
 # ── Pipeline ─────────────────────────────────────────────────────────────
@@ -186,7 +186,7 @@ MLFLOW_EXPERIMENT_NAME=ames-housing
 
 ---
 
-## 🏛️ Technology Stack
+## Technology Stack
 
 | Layer | Technology | Justification |
 |-------|-----------|---------------|
@@ -205,7 +205,7 @@ MLFLOW_EXPERIMENT_NAME=ames-housing
 
 ---
 
-## 📡 Eight-Agent Pipeline
+## Eight-Agent Pipeline
 
 Each agent implements a `BaseAgent` abstract class with:
 - Structured logging via `structlog`
@@ -246,7 +246,7 @@ The MAANG-grade RAG chatbot runs **entirely offline** inside the dashboard conta
 
 ---
 
-## 🔧 Engineering Decisions
+## Engineering Decisions
 
 ### Why flan-t5-base?
 Explicit tradeoff: answer quality vs. zero runtime dependencies. It struggles with complex multi-step reasoning, but for dataset Q&A with retrieved context, it produces adequate answers. The extractive fallback catches cases where generation quality is low.
@@ -382,7 +382,7 @@ Agent executes → EventBus.emit() → WebSocket Hub → All connected browsers
 
 ---
 
-## 📈 Prometheus Metrics
+## Prometheus Metrics
 
 | Type | Metric | Labels |
 |------|--------|--------|
