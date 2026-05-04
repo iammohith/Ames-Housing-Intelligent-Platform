@@ -15,7 +15,7 @@ async def rebuild_knowledge_base(api_key: str = Depends(verify_api_key)):
     try:
         from core.knowledge_builder import KnowledgeBuilder
         kb = KnowledgeBuilder()
-        chunks = await kb.build({}, "manual-rebuild")
+        chunks = kb.rebuild_from_artifacts()
         return {"message": f"Knowledge base rebuilt: {chunks} chunks indexed"}
     except Exception as e:
         return {"error": str(e)}

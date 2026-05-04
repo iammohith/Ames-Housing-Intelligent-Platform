@@ -22,11 +22,13 @@ section[data-testid="stSidebar"] { background: #F8FAFC !important; }
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
 .exec-header {
-    background: linear-gradient(135deg, #0F172A 0%, #1E3A5F 100%);
-    border-radius: 16px; padding: 32px 40px; margin-bottom: 28px; color: white;
+    background: linear-gradient(135deg, #EFF6FF 0%, #E0F2FE 100%);
+    border: 1px solid #BFDBFE;
+    box-shadow: 0 4px 15px -3px rgba(37,99,235,0.05);
+    border-radius: 16px; padding: 32px 40px; margin-bottom: 28px; color: #0F172A;
 }
 .exec-title { font-family: 'Outfit', sans-serif; font-size: 2rem; font-weight: 700; margin: 0; }
-.exec-sub { font-size: 1rem; color: #94A3B8; margin-top: 6px; }
+.exec-sub { font-size: 1rem; color: #475569; margin-top: 6px; }
 
 .kpi-card {
     background: white; border-radius: 14px; padding: 22px 20px;

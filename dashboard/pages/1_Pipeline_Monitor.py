@@ -421,6 +421,13 @@ with tab3:
                             try:
                                 df_full = pd.read_csv("/app/data/AmesHousing.csv")
                                 primary_feature = list(features.keys())[0]
+                                
+                                # Reconstruct key engineered features for visualization
+                                if "TotalSF" not in df_full.columns and "Total Bsmt SF" in df_full.columns:
+                                    df_full["TotalSF"] = df_full["Total Bsmt SF"] + df_full["1st Flr SF"] + df_full.get("2nd Flr SF", 0)
+                                if "OverallScore" not in df_full.columns and "Overall Qual" in df_full.columns:
+                                    df_full["OverallScore"] = df_full["Overall Qual"] * df_full.get("Overall Cond", 5)
+                                    
                                 if primary_feature in df_full.columns:
                                     # Handle mapping column names back if needed, but assuming exact match
                                     fig_scatter = px.scatter(

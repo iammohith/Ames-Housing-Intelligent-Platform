@@ -212,3 +212,29 @@ class KnowledgeBuilder:
         for doc in documents:
             with open(os.path.join(doc_dir, f"{doc['title']}.txt"), "w") as f:
                 f.write(doc["content"])
+
+    def rebuild_from_artifacts(self, artifacts_dir: str = "/app/artifacts/knowledge") -> int:
+        if not os.path.exists(artifacts_dir):
+            return 0
+        documents = []
+        runs = os.listdir(artifacts_dir)
+        if not runs:
+            return 0
+            
+        runs_with_time = [(r, os.path.getmtime(os.path.join(artifacts_dir, r))) for r in runs]
+        runs_with_time.sort(key=lambda x: x[1], reverse=True)
+        run_dir = os.path.join(artifacts_dir, runs_with_time[0][0])
+        
+        if not os.path.isdir(run_dir):
+            return 0
+            
+        for f in os.listdir(run_dir):
+            if f.endswith(".txt"):
+                with open(os.path.join(run_dir, f)) as fh:
+                    documents.append({"title": f.replace(".txt", ""), "content": fh.read()})
+
+        if not documents:
+            return 0
+
+        chunks = self._chunk_documents(documents)
+        return self._index_chunks(chunks, "manual-rebuild")

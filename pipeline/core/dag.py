@@ -54,6 +54,8 @@ class DAGOrchestrator:
         ))
 
         failed_agents: List[str] = []
+        pending_tasks: Set[asyncio.Task] = set()
+        running_agents: Set[str] = set()
 
         try:
             while len(self.completed) < len(self.agents):
@@ -62,10 +64,11 @@ class DAGOrchestrator:
                     name for name, deps in DAG.items()
                     if name not in self.completed
                     and name not in failed_agents
+                    and name not in running_agents
                     and all(d in self.completed for d in deps)
                 ]
 
-                if not ready:
+                if not ready and not pending_tasks:
                     if len(self.completed) + len(failed_agents) < len(self.agents):
                         raise DeadlockError("No runnable agents — possible cycle or upstream failure")
                     break
@@ -78,15 +81,28 @@ class DAGOrchestrator:
                         timestamp=datetime.utcnow(),
                     ))
 
-                # Run ready agents concurrently
-                tasks = [self._run_with_retry(name, run_id) for name in ready]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+                # Run ready agents
+                for name in ready:
+                    task = asyncio.create_task(self._run_with_retry(name, run_id))
+                    task.set_name(name)
+                    pending_tasks.add(task)
+                    running_agents.add(name)
 
-                for name, result in zip(ready, results):
-                    if isinstance(result, Exception):
-                        failed_agents.append(name)
-                        logger.error("Agent permanently failed", agent=name, error=str(result))
-                    # Success case handled in _run_with_retry
+                # Wait for at least one task to finish
+                if pending_tasks:
+                    done, pending_tasks = await asyncio.wait(
+                        pending_tasks, return_when=asyncio.FIRST_COMPLETED
+                    )
+                    
+                    for task in done:
+                        name = task.get_name()
+                        running_agents.remove(name)
+                        
+                        try:
+                            task.result()  # Will raise if agent failed permanently
+                        except Exception as e:
+                            failed_agents.append(name)
+                            logger.error("Agent permanently failed", agent=name, error=str(e))
 
         except DeadlockError as e:
             await self.event_bus.emit(AgentEvent(
@@ -97,6 +113,9 @@ class DAGOrchestrator:
 
         duration_ms = int((time.time() - start_time) * 1000)
         status = "FAILED" if failed_agents else "SUCCESS"
+
+        if "orchestration_agent" in self.results and status == "SUCCESS":
+            return self.results["orchestration_agent"]
 
         return PipelineResult(
             run_id=run_id,
@@ -144,5 +163,7 @@ class DAGOrchestrator:
         from core.schemas import IngestionInput
         if agent_name == "ingestion_agent":
             return IngestionInput()
-        # All other agents receive the accumulated results dict
-        return self.results
+        if agent_name == "orchestration_agent":
+            return self.results
+        # All other agents receive the accumulated agents dictionary
+        return self.agents

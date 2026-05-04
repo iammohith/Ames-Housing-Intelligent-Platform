@@ -34,69 +34,28 @@ async def _execute_pipeline(run_id: str):
     _running_pipelines[run_id] = {"status": "RUNNING", "started_at": datetime.utcnow()}
 
     try:
-        agents_map = {}
-
-        # Agent 1: Ingestion
-        agent = IngestionAgent(event_bus, run_id)
-        result = await agent.run(IngestionInput())
-        agents_map["ingestion_agent"] = agent
-
-        # Agent 2: Schema
-        agent2 = SchemaAgent(event_bus, run_id)
-        result2 = await agent2.run(agents_map)
-        agents_map["schema_agent"] = agent2
-
-        # Agent 3: Cleaning
-        agent3 = CleaningAgent(event_bus, run_id)
-        result3 = await agent3.run(agents_map)
-        agents_map["cleaning_agent"] = agent3
-
-        # Agent 4: Features
-        agent4 = FeatureAgent(event_bus, run_id)
-        result4 = await agent4.run(agents_map)
-        agents_map["feature_agent"] = agent4
-
-        # Agent 5: Encoding
-        agent5 = EncodingAgent(event_bus, run_id)
-        result5 = await agent5.run(agents_map)
-        agents_map["encoding_agent"] = agent5
-
-        # Agent 6 & 7: Anomaly + ML (parallel)
-        agent6 = AnomalyAgent(event_bus, run_id)
-        agent7 = MLAgent(event_bus, run_id)
-
-        await event_bus.emit(
-            __import__("core.schemas", fromlist=["AgentEvent"]).AgentEvent(
-                run_id=run_id, agent="orchestration_agent",
-                status=AgentStatus.PROGRESS,
-                message="Agents anomaly_agent and ml_agent running in parallel",
-                timestamp=datetime.utcnow(),
-            )
-        )
-
-        result6, result7 = await asyncio.gather(
-            agent6.run(agents_map),
-            agent7.run(agents_map),
-        )
-        agents_map["anomaly_agent"] = agent6
-        agents_map["ml_agent"] = agent7
-
-        # Agent 8: Orchestration
-        agent8 = OrchestrationAgent(event_bus, run_id)
-        # Pass result objects instead of agent objects for orchestration
-        results_dict = {
-            "ingestion_agent": result,
-            "schema_agent": result2,
-            "cleaning_agent": result3,
-            "feature_agent": result4,
-            "encoding_agent": result5,
-            "anomaly_agent": result6,
-            "ml_agent": result7,
+        from core.dag import DAGOrchestrator
+        agents_map = {
+            "ingestion_agent": IngestionAgent(event_bus, run_id),
+            "schema_agent": SchemaAgent(event_bus, run_id),
+            "cleaning_agent": CleaningAgent(event_bus, run_id),
+            "feature_agent": FeatureAgent(event_bus, run_id),
+            "encoding_agent": EncodingAgent(event_bus, run_id),
+            "anomaly_agent": AnomalyAgent(event_bus, run_id),
+            "ml_agent": MLAgent(event_bus, run_id),
+            "orchestration_agent": OrchestrationAgent(event_bus, run_id),
         }
-        final = await agent8.run(results_dict)
 
-        pipeline_runs_total.labels(status="success").inc()
-        _running_pipelines[run_id]["status"] = "SUCCESS"
+        orchestrator = DAGOrchestrator(agents_map, event_bus)
+        final = await orchestrator.run_pipeline(run_id)
+
+        if final.status == "SUCCESS":
+            pipeline_runs_total.labels(status="success").inc()
+            _running_pipelines[run_id]["status"] = "SUCCESS"
+        else:
+            pipeline_runs_total.labels(status="failure").inc()
+            _running_pipelines[run_id]["status"] = "FAILED"
+            
         _running_pipelines[run_id]["result"] = final
 
     except Exception as e:
