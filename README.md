@@ -228,15 +228,15 @@ Each agent implements a `BaseAgent` abstract class with:
 
 ---
 
-## 🧠 AI Chatbot
+## 🧠 AI Chatbot (Agentic RAG)
 
-The RAG chatbot runs **entirely offline** inside the dashboard container:
+The MAANG-grade RAG chatbot runs **entirely offline** inside the dashboard container, utilizing an advanced multi-step retrieval and verification architecture:
 
-1. User query → embedded via `all-MiniLM-L6-v2`
-2. ChromaDB similarity search → top-5 relevant chunks
-3. Prompt construction with retrieved context
-4. `flan-t5-base` generation → answer with source citations
-5. **Extractive fallback** fires when answer is < 15 words
+1. **Intent Routing**: User queries are classified to actively boost metadata across specific pipeline reports.
+2. **Hybrid Retrieval**: Merges dense vector embeddings (`all-MiniLM-L6-v2`) with an Okapi BM25 sparse index via Reciprocal Rank Fusion (RRF).
+3. **Semantic MMR Diversity**: Applies cosine distance optimization to ensure retrieved context is information-diverse and non-redundant.
+4. **Conversational Memory**: The UI statefully parses chat history to the generator for seamless contextual follow-ups.
+5. **Agentic Verification**: `flan-t5-base` generates the answer. An **LLM-as-a-judge** verification layer evaluates the grounding score and runs a secondary self-critique to prevent hallucinations.
 
 ### Example Questions
 - "Which neighborhoods have the highest average sale prices?"
