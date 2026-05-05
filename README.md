@@ -56,19 +56,26 @@ flowchart TD
 git clone https://github.com/iammohith/Ames-Housing-Intelligent-Platform.git
 cd Ames-Housing-Intelligent-Platform
 
-# Copy environment file
+# Optional: Create .env from template
 cp .env.example .env          # macOS / Linux
 # copy .env.example .env      # Windows (Command Prompt)
 
-# Launch everything
+# Launch everything (single command)
 docker compose up --build
+
+# System is ready when all services show "healthy"
+# Monitor with: docker compose ps
 ```
 
-> **First build**: ~10 minutes (Python packages + flan-t5-base model baked into image)
-> **Subsequent runs**: ~45 seconds
+> **First build**: ~5-10 minutes (Python packages + flan-t5-base model)
+> **Subsequent runs**: ~60 seconds (cached images + fast startup healthchecks)
+> **Total pipeline execution**: 8-10 minutes (first run with model training)
 
-**System Requirements**: Docker Desktop, 8 GB RAM minimum (16 GB recommended).
-Works on Intel x86-64, AMD64, and Apple Silicon (M1/M2/M3).
+**System Requirements**: 
+- Docker Desktop 20.10+ with Compose 2.0+
+- **RAM**: 8 GB minimum (16 GB recommended for comfort)
+- **Disk**: 3 GB for images + 1 GB for runtime data
+- **CPU**: Works on Intel x86-64, AMD64, and Apple Silicon (M1/M2/M3)
 
 ---
 
@@ -76,11 +83,13 @@ Works on Intel x86-64, AMD64, and Apple Silicon (M1/M2/M3).
 
 | Interface | URL | Description |
 |-----------|-----|-------------|
-| **Dashboard** | http://localhost:8080 | All 3 views — start here |
-| **MLflow** | http://localhost:5001 | Experiment tracker + model registry |
+| **Dashboard** | http://localhost:8501 | All 3 views — start here |
+| **MLflow** | http://localhost:5000 | Experiment tracker + model registry |
 | **Grafana** | http://localhost:3001 | System + pipeline metrics (admin/admin) |
-| **API Docs** | http://localhost:8000/docs | FastAPI OpenAPI interface |
-| **Prometheus** | http://localhost:9090 | Raw metrics |
+| **API Docs** | http://localhost:8000/docs | FastAPI OpenAPI interactive documentation |
+| **Prometheus** | http://localhost:9090 | Metrics explorer + PromQL queries |
+| **API /metrics** | http://localhost:8000/metrics | Prometheus scrape endpoint |
+| **Health Check** | http://localhost:8000/health | Deep system health status |
 
 ---
 
@@ -402,6 +411,122 @@ Agent executes → EventBus.emit() → WebSocket Hub → All connected browsers
 
 ---
 
+## 🔧 Troubleshooting
+
+### Issue: `docker compose up` fails or services crash
+
+**Symptom**: Services keep restarting or exit immediately
+
+**Quick Fix**:
+```bash
+# 1. Check what's wrong
+docker compose logs -f orchestration-api
+
+# 2. Full restart
+docker compose down -v  # Remove all containers & volumes
+docker compose up --build
+
+# 3. If still fails, check system resources
+docker stats  # Check CPU/memory usage
+```
+
+### Issue: Dashboard shows "Connecting..." indefinitely
+
+**Symptom**: Dashboard UI stuck on connection screen
+
+**Fix**:
+```bash
+# Verify orchestration-api is running and healthy
+docker compose ps
+
+# If not healthy, check logs
+docker compose logs orchestration-api
+
+# Restart just the dashboard
+docker compose restart dashboard
+```
+
+### Issue: Predictions return NaN or very high/low prices
+
+**Symptom**: `/predict` endpoint returns invalid predictions
+
+**Fix**:
+```bash
+# 1. Verify pipeline has completed successfully
+curl http://localhost:8000/pipeline/status/<run_id> | jq '.agents[] | select(.name == "ml_agent")'
+
+# 2. Check model artifacts exist
+docker compose exec orchestration-api ls -lah /app/artifacts/
+
+# 3. Test with different property values
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"GrLivArea": 1500, "OverallQual": 7, "YearBuilt": 2000}'
+```
+
+### Issue: Out of Memory - services get OOMKilled
+
+**Symptom**: `docker ps` shows services exited with code 137 (OOM)
+
+**Fix**:
+```bash
+# 1. Increase Docker Desktop memory limit
+#    (Preferences → Resources → Memory: increase to 12GB+)
+
+# 2. Or reduce service memory footprint
+#    Comment out unnecessary agents or reduce batch sizes
+```
+
+### Issue: Grafana dashboard shows no metrics
+
+**Symptom**: Empty graphs in Grafana or "No Data" message
+
+**Fix**:
+```bash
+# 1. Verify Prometheus is scraping metrics
+curl http://localhost:9090/api/v1/targets | jq '.data.activeTargets'
+
+# 2. Trigger a pipeline run to generate metrics
+curl -X POST http://localhost:8000/pipeline/run \
+  -H "X-API-Key: changeme" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# 3. Wait 10 seconds (Prometheus scrape interval), then refresh Grafana
+```
+
+### Issue: WebSocket connection refused or times out
+
+**Symptom**: Dashboard logs show WebSocket errors
+
+**Fix**:
+```bash
+# Verify WebSocket endpoint is working
+curl http://localhost:8000/health
+
+# Check if firewall is blocking port 8000
+lsof -i :8000
+
+# Restart API service
+docker compose restart orchestration-api
+```
+
+---
+
+## 🎓 Learning Outcomes
+
+This platform demonstrates:
+
+✅ **Data Engineering**: Temporal train/val/test split, schema validation, feature engineering pipeline  
+✅ **ML Ops**: Model registry, experiment tracking, metrics collection, performance monitoring  
+✅ **System Design**: Event-driven architecture, async DAG orchestration, WebSocket real-time updates  
+✅ **Production Patterns**: Health checks, retry logic, structured logging, graceful degradation  
+✅ **Observability**: Prometheus metrics, Grafana dashboards, correlation IDs, anomaly detection  
+✅ **API Design**: REST endpoints, WebSocket streaming, batch operations, SHAP explainability  
+✅ **AI/ML Integration**: RAG with grounding, semantic search, intent classification, fallback handling  
+✅ **DevOps**: Docker Compose, multi-stage builds, image optimization, healthchecks  
+
+
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -420,5 +545,6 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 <p align="center">
   <b>Built with ❤️ — Zero API Keys, One Command, Production-Grade ML</b><br/>
-  <a href="https://github.com/iammohith/Ames-Housing-Intelligent-Platform">github.com/iammohith/Ames-Housing-Intelligent-Platform</a>
+  <a href="https://github.com/iammohith/Ames-Housing-Intelligent-Platform">github.com/iammohith/Ames-Housing-Intelligent-Platform</a><br/>
+  <sub>Phase 1-8 System Transformation | MAANG-Level Design Patterns</sub>
 </p>
