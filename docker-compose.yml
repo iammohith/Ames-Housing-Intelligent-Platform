@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
 
   # ── Database ─────────────────────────────────────────────────────────────
@@ -28,14 +26,16 @@ services:
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
-      retries: 3
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     restart: unless-stopped
 
   # ── Experiment Tracking ───────────────────────────────────────────────────
   mlflow:
     image: ghcr.io/mlflow/mlflow:v2.11.0
     command: >
-      sh -c "pip install psycopg2-binary && mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri postgresql://ames:${POSTGRES_PASSWORD:-changeme}@postgres/ames_platform --default-artifact-root /mlflow/artifacts"
+      sh -c "pip install --no-cache-dir psycopg2-binary && mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri postgresql://ames:${POSTGRES_PASSWORD:-changeme}@postgres/ames_platform --default-artifact-root /mlflow/artifacts"
     ports:
       - "5001:5000"
     volumes:
@@ -44,8 +44,9 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:5000/api/2.0/mlflow/version"]
       interval: 15s
+      timeout: 5s
       retries: 5
       start_period: 30s
     restart: unless-stopped
@@ -62,6 +63,8 @@ services:
       DATABASE_URL_SYNC: postgresql://ames:${POSTGRES_PASSWORD:-changeme}@postgres/ames_platform
       REDIS_URL: redis://redis:6379
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      ARTIFACTS_DIR: /app/artifacts
+      CHROMA_PATH: /app/chroma
       REMOVE_ARTIFACTS: ${REMOVE_ARTIFACTS:-true}
       LOG_TRANSFORM_TARGET: ${LOG_TRANSFORM_TARGET:-true}
       ANOMALY_CONTAMINATION: ${ANOMALY_CONTAMINATION:-0.02}
@@ -81,8 +84,9 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
+      timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 30s
     restart: unless-stopped
 
   # ── Unified Dashboard (Streamlit + React + Embedded RAG) ─────────────────
@@ -97,7 +101,12 @@ services:
       WS_URL: ws://orchestration-api:8000
       DATABASE_URL: postgresql://ames:${POSTGRES_PASSWORD:-changeme}@postgres/ames_platform
       REDIS_URL: redis://redis:6379
+      ARTIFACTS_DIR: /app/artifacts
+      CHROMA_PATH: /app/chroma
       API_KEY: ${API_KEY:-changeme}
+      STREAMLIT_SERVER_HEADLESS: "true"
+      STREAMLIT_SERVER_PORT: "8501"
+      STREAMLIT_SERVER_ADDRESS: "0.0.0.0"
     volumes:
       - ./data:/app/data:ro
       - pipeline_artifacts:/app/artifacts
@@ -106,10 +115,11 @@ services:
       orchestration-api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8501/healthz"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501').read()"]
       interval: 15s
+      timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 45s
     restart: unless-stopped
 
   # ── Observability ─────────────────────────────────────────────────────────
@@ -126,7 +136,9 @@ services:
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
       interval: 15s
-      retries: 3
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
   grafana:
@@ -151,7 +163,9 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 15s
-      retries: 3
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
 
 volumes:
