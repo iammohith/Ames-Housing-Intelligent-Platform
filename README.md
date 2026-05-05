@@ -546,5 +546,5 @@ MIT License. See [LICENSE](LICENSE) for details.
 <p align="center">
   <b>Built with ❤️ — Zero API Keys, One Command, Production-Grade ML</b><br/>
   <a href="https://github.com/iammohith/Ames-Housing-Intelligent-Platform">github.com/iammohith/Ames-Housing-Intelligent-Platform</a><br/>
-  <sub>Phase 1-8 System Transformation | MAANG-Level Design Patterns</sub>
+  <sub>MAANG-Level System Design</sub>
 </p>
