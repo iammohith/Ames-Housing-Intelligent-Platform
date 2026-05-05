@@ -270,6 +270,7 @@ A random split would let the model see 2010 properties during training — that'
 
 ## 📁 Repository Structure
 
+
 ```
 ames-housing-platform/
 ├── docker-compose.yml
@@ -295,6 +296,7 @@ ames-housing-platform/
 │   │   ├── event_bus.py
 │   │   ├── metrics.py
 │   │   ├── schemas.py
+│   │   ├── feature_engineering.py
 │   │   └── knowledge_builder.py
 │   └── api/
 │       ├── main.py
@@ -314,6 +316,7 @@ ames-housing-platform/
 │   │   └── 3_AI_Insights_Chatbot.py
 │   ├── components/
 │   │   └── live_dag/
+│   │       ├── package.json
 │   │       └── src/
 │   │           ├── LiveDAG.jsx
 │   │           ├── AgentNode.jsx
@@ -323,7 +326,8 @@ ames-housing-platform/
 │       ├── retriever.py
 │       ├── generator.py
 │       ├── query_classifier.py
-│       └── conversation.py
+│       ├── conversation.py
+│       └── knowledge_builder.py
 ├── postgres/
 │   └── init.sql
 ├── prometheus/
@@ -339,7 +343,6 @@ ames-housing-platform/
     ├── test_rag/
     └── test_integration/
 ```
-
 ---
 
 ## 🧪 Testing
