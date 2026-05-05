@@ -30,23 +30,37 @@ async def get_anomalies(page: int = 1, per_page: int = 50, severity: str = None)
     try:
         import psycopg2
 
+        # Validate inputs
+        if page < 1:
+            page = 1
+        if per_page < 1 or per_page > 500:
+            per_page = 50
+        
         conn = psycopg2.connect(os.getenv("DATABASE_URL_SYNC", ""))
         cur = conn.cursor()
         query = "SELECT * FROM anomaly_log"
         params = []
-        if severity:
+        if severity and severity.upper() in ["HIGH", "MEDIUM", "LOW"]:
             query += " WHERE severity = %s"
-            params.append(severity)
+            params.append(severity.upper())
         query += (
             f" ORDER BY created_at DESC LIMIT {per_page} OFFSET {(page-1)*per_page}"
         )
         cur.execute(query, params)
         rows = cur.fetchall()
-        cols = [d[0] for d in cur.description]
+        cols = [d[0] for d in cur.description] if cur.description else []
+        total_rows = len(rows)
         conn.close()
-        return {"anomalies": [dict(zip(cols, r)) for r in rows], "page": page}
+        return {
+            "anomalies": [dict(zip(cols, r)) for r in rows] if cols else [],
+            "page": page,
+            "per_page": per_page,
+            "total_on_page": total_rows,
+        }
     except Exception as e:
-        return {"anomalies": [], "error": str(e)}
+        import structlog
+        structlog.get_logger().warning(f"Failed to fetch anomalies: {e}")
+        return {"anomalies": [], "page": page, "error": str(e)[:100]}
 
 
 @router.get("/schema-history")
@@ -67,15 +81,19 @@ async def get_schema_history():
                 {
                     "run_id": r[0],
                     "column": r[1],
-                    "null_rate": r[2],
+                    "null_rate": float(r[2]) if r[2] is not None else 0.0,
                     "data_type": r[3],
                     "is_structural_na": r[4],
                 }
                 for r in rows
             ]
+            if rows
+            else []
         }
     except Exception as e:
-        return {"history": [], "error": str(e)}
+        import structlog
+        structlog.get_logger().warning(f"Failed to fetch schema history: {e}")
+        return {"history": [], "error": str(e)[:100]}
 
 
 @router.get("/models")
@@ -103,6 +121,9 @@ async def get_neighborhood_stats():
         return {"stats": [], "message": "Dataset not found"}
     try:
         df = pd.read_csv(csv_path)
+        if "Neighborhood" not in df.columns or "SalePrice" not in df.columns:
+            return {"stats": [], "message": "Required columns missing"}
+        
         stats = (
             df.groupby("Neighborhood")["SalePrice"]
             .agg(["median", "mean", "std", "count", "min", "max"])
@@ -118,10 +139,16 @@ async def get_neighborhood_stats():
             "min_price",
             "max_price",
         ]
-        stats = stats.fillna(0).round(2)
+        # Convert to safe numeric types
+        for col in ["median_price", "mean_price", "std_price", "min_price", "max_price"]:
+            stats[col] = stats[col].fillna(0).astype(float).round(2)
+        stats["transaction_count"] = stats["transaction_count"].astype(int)
+        
         return {"stats": stats.to_dict(orient="records")}
     except Exception as e:
-        return {"stats": [], "error": str(e)}
+        import structlog
+        structlog.get_logger().warning(f"Failed to compute neighborhood stats: {e}")
+        return {"stats": [], "error": str(e)[:100]}
 
 
 @router.get("/processed-data")

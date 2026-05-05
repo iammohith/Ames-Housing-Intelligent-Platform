@@ -60,7 +60,11 @@ def retrieve_context(query: str, top_k: int = 5) -> str:
             collection = client.get_collection("ames_knowledge", embedding_function=emb_fn)
         except Exception as e:
             logger.warning(f"ChromaDB collection not found: {e}. Knowledge base may need rebuilding.")
-            return _fallback_context(query)
+            fallback = _fallback_context(query)
+            # Mark fallback responses so users know these are not from RAG
+            if fallback and not fallback.startswith("[FALLBACK]"):
+                return f"[⚠️ FALLBACK - Knowledge base empty] {fallback}"
+            return fallback
 
         initial_k = top_k * 4
 

@@ -219,10 +219,23 @@ class MLAgent(BaseAgent):
             os.makedirs(shap_dir, exist_ok=True)
 
             # Save SHAP summary data
+            # Handle different SHAP output shapes across model types
+            shap_array = np.abs(shap_values)
+            # If 3D array (e.g., binary classification), take first dimension or mean across classes
+            if shap_array.ndim == 3:
+                shap_array = shap_array[0]  # Take first class or mean
+            elif shap_array.ndim != 2:
+                # Fallback if unexpected shape
+                await self.emit(
+                    AgentStatus.WARNING,
+                    f"Unexpected SHAP shape {shap_array.shape}, using flattening fallback"
+                )
+                shap_array = np.abs(shap_values).reshape(-1, len(feature_cols)) if len(shap_values) > 0 else np.zeros((1, len(feature_cols)))
+            
             shap_importance = pd.DataFrame(
                 {
                     "feature": feature_cols,
-                    "mean_abs_shap": np.abs(shap_values).mean(axis=0),
+                    "mean_abs_shap": shap_array.mean(axis=0),
                 }
             ).sort_values("mean_abs_shap", ascending=False)
             shap_importance.to_csv(

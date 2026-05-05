@@ -173,17 +173,34 @@ async def predict_single(req: PredictRequest, api_key: str = Depends(verify_api_
     pred_log = model.predict(X)[0]
     pred_price = float(np.expm1(pred_log)) if pred_log < 20 else float(pred_log)
 
-    # SHAP top features (simplified)
+    # SHAP top features (simplified) with robust dimension handling
     shap_features = {}
     try:
         import shap
 
         explainer = shap.TreeExplainer(model)
-        shap_values = explainer.shap_values(X)[0]
-        top_indices = np.argsort(np.abs(shap_values))[-5:][::-1]
+        shap_values = explainer.shap_values(X)
+        
+        # Handle different SHAP output shapes
+        if isinstance(shap_values, list):  # Some explainers return list of arrays
+            shap_values = shap_values[0]
+        
+        shap_array = np.abs(shap_values)
+        if shap_array.ndim == 3:  # Binary classification: (2, samples, features)
+            shap_array = shap_array[0]
+        elif shap_array.ndim != 2:
+            # Unexpected shape, skip SHAP
+            raise ValueError(f"Unexpected SHAP shape: {shap_array.shape}")
+        
+        shap_row = shap_array[0] if shap_array.ndim == 2 else shap_array
+        top_indices = np.argsort(np.abs(shap_row))[-5:][::-1]
         for idx in top_indices:
-            shap_features[feature_cols[idx]] = round(float(shap_values[idx]), 4)
-    except Exception:
+            if idx < len(feature_cols):
+                shap_features[feature_cols[idx]] = round(float(shap_row[idx]), 4)
+    except Exception as e:
+        # If SHAP fails for any reason, return empty dict (fallback to top features based on model)
+        import structlog
+        structlog.get_logger().warning(f"SHAP computation failed: {e}")
         shap_features = {"Overall Qual": 0.0}
 
     return PredictResponse(

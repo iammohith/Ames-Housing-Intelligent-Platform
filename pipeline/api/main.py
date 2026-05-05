@@ -31,6 +31,7 @@ async def lifespan(app: FastAPI):
     
     # Startup
     logger.info("🚀 Starting Ames Housing API...")
+    cleanup_task = None
     try:
         # Verify event bus is ready
         event_bus_health = event_bus._history  # Simple health check
@@ -55,12 +56,13 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("🛑 Shutting down Ames Housing API...")
     try:
-        # Cancel cleanup task
-        cleanup_task.cancel()
-        try:
-            await cleanup_task
-        except asyncio.CancelledError:
-            pass
+        # Cancel cleanup task safely
+        if cleanup_task is not None:
+            cleanup_task.cancel()
+            try:
+                await cleanup_task
+            except asyncio.CancelledError:
+                pass
         
         # Clear all event bus state for clean restart
         event_bus._history.clear()

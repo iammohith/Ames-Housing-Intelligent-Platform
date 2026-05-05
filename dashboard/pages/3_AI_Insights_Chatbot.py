@@ -41,16 +41,34 @@ with st.sidebar:
     try:
         resp = requests.get(f"{API_URL}/api/knowledge-base/status", timeout=5)
         if resp.status_code == 200:
-            kb = resp.json()
-            st.markdown(f"📚 **{kb.get('chunk_count', 0)}** chunks indexed")
-            st.markdown(f"📄 **{kb.get('document_count', 0)}** documents")
-            if kb.get("last_updated"):
-                st.markdown(f"🕐 Last updated: {kb['last_updated'][:19]}")
-            st.session_state.rag_initialized = kb.get("chunk_count", 0) > 0
+            try:
+                kb = resp.json()
+                # Validate response structure before accessing fields
+                if not isinstance(kb, dict):
+                    st.warning("⚠️ Invalid API response format")
+                    st.session_state.rag_initialized = False
+                else:
+                    chunk_count = kb.get('chunk_count', 0)
+                    doc_count = kb.get('document_count', 0)
+                    last_updated = kb.get("last_updated")
+                    
+                    st.markdown(f"📚 **{chunk_count}** chunks indexed")
+                    st.markdown(f"📄 **{doc_count}** documents")
+                    if last_updated and isinstance(last_updated, str) and len(last_updated) >= 19:
+                        st.markdown(f"🕐 Last updated: {last_updated[:19]}")
+                    st.session_state.rag_initialized = chunk_count > 0
+            except (ValueError, AttributeError) as json_err:
+                st.warning(f"⚠️ API response error: Invalid format")
+                st.session_state.rag_initialized = False
         else:
-            st.info("Knowledge base not available")
-    except Exception:
-        st.info("Connect to API for KB status")
+            st.info(f"Knowledge base not available (HTTP {resp.status_code})")
+            st.session_state.rag_initialized = False
+    except requests.Timeout:
+        st.info("⏱️ API connection timeout")
+        st.session_state.rag_initialized = False
+    except Exception as e:
+        st.info(f"Connect to API for KB status: {str(e)[:50]}")
+        st.session_state.rag_initialized = False
 
     st.markdown("---")
     if st.button("🔄 Re-index Knowledge Base"):

@@ -33,12 +33,17 @@ async def get_kb_status():
         import chromadb
 
         client = chromadb.PersistentClient(path="/app/chroma")
-        collection = client.get_collection("ames_knowledge")
-        count = collection.count()
+        try:
+            collection = client.get_collection("ames_knowledge")
+            count = collection.count()
+        except Exception:
+            # Collection doesn't exist yet
+            count = 0
+        
         return KnowledgeBaseStatus(
             chunk_count=count,
-            document_count=10,
-            last_updated=datetime.utcnow(),
+            document_count=10 if count > 0 else 0,
+            last_updated=datetime.utcnow() if count > 0 else None,
             documents=[
                 "neighborhood_stats",
                 "feature_importance_report",
@@ -50,7 +55,14 @@ async def get_kb_status():
                 "feature_manifest",
                 "market_segments",
                 "data_dictionary",
-            ],
+            ] if count > 0 else [],
         )
-    except Exception:
-        return KnowledgeBaseStatus()
+    except Exception as e:
+        import structlog
+        structlog.get_logger().warning(f"Failed to get KB status: {e}")
+        return KnowledgeBaseStatus(
+            chunk_count=0,
+            document_count=0,
+            last_updated=None,
+            documents=[],
+        )

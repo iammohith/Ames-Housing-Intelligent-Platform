@@ -80,7 +80,12 @@ class FeatureAgent(BaseAgent):
         assert (
             df[engineered_cols].isnull().sum().sum() == 0
         ), "Engineered features contain nulls"
-        assert (df["TotalSF"] >= df["1st Flr SF"]).all(), "TotalSF < 1stFlrSF violation"
+        # Validate TotalSF assertion only if both columns exist
+        if "TotalSF" in df.columns and "1st Flr SF" in df.columns:
+            assert (df["TotalSF"] >= df["1st Flr SF"]).all(), "TotalSF < 1stFlrSF violation"
+        elif "TotalSF" in df.columns:
+            # If 1st Flr SF missing (dropped), just verify TotalSF is non-negative
+            assert (df["TotalSF"] >= 0).all(), "Negative TotalSF found"
         assert (df["HouseAge"] >= 0).all(), "Negative HouseAge found"
 
         await self.emit(

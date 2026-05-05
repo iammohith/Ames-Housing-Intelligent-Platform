@@ -10,19 +10,33 @@ import re
 MODEL_CACHE = os.getenv("TRANSFORMERS_CACHE", "/app/model_cache")
 _model = None
 _tokenizer = None
+_model_lock = None
+
+
+def _get_model_lock():
+    """Get or create the model loading lock (thread-safe)."""
+    global _model_lock
+    if _model_lock is None:
+        import threading
+        _model_lock = threading.Lock()
+    return _model_lock
 
 
 def _load_model():
     global _model, _tokenizer
-    if _model is None:
-        from transformers import T5ForConditionalGeneration, T5Tokenizer
+    # Use lock to prevent race conditions when multiple requests try to load model simultaneously
+    lock = _get_model_lock()
+    with lock:
+        # Double-check pattern: verify again after acquiring lock
+        if _model is None:
+            from transformers import T5ForConditionalGeneration, T5Tokenizer
 
-        _tokenizer = T5Tokenizer.from_pretrained(
-            "google/flan-t5-base", cache_dir=MODEL_CACHE
-        )
-        _model = T5ForConditionalGeneration.from_pretrained(
-            "google/flan-t5-base", cache_dir=MODEL_CACHE
-        )
+            _tokenizer = T5Tokenizer.from_pretrained(
+                "google/flan-t5-base", cache_dir=MODEL_CACHE
+            )
+            _model = T5ForConditionalGeneration.from_pretrained(
+                "google/flan-t5-base", cache_dir=MODEL_CACHE
+            )
     return _model, _tokenizer
 
 

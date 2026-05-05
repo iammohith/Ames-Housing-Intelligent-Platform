@@ -125,6 +125,8 @@ if "agent_statuses" not in st.session_state:
     st.session_state.agent_statuses = {}
 if "metrics" not in st.session_state:
     st.session_state.metrics = {}
+if "last_api_error" not in st.session_state:
+    st.session_state.last_api_error = None
 
 # ── Header ───────────────────────────────────────────────────────────────
 st.markdown("# 📡 Pipeline Monitor")
