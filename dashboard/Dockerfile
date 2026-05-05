@@ -32,6 +32,6 @@ RUN mkdir -p /app/chroma /app/artifacts
 
 EXPOSE 8501
 
-HEALTHCHECK CMD curl -f http://localhost:8501/healthz || exit 1
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/').read()" || exit 1
 
 CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]

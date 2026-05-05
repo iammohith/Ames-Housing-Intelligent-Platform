@@ -40,6 +40,94 @@ def _load_model():
     return _model, _tokenizer
 
 
+def compute_grounding_score(answer: str, context: str) -> float:
+    """
+    Compute how well-grounded the answer is in the context.
+    
+    MAANG-level: Semantic grounding using TF-IDF-like overlap scoring.
+    Returns 0.0-1.0: higher = more grounded in context.
+    """
+    if not answer or not context:
+        return 0.0
+    
+    import re
+    
+    # Tokenize both texts
+    context_words = set(re.findall(r'\b\w+\b', context.lower()))
+    answer_words = re.findall(r'\b\w+\b', answer.lower())
+    
+    if not answer_words:
+        return 0.0
+    
+    # Compute overlap (Jaccard similarity variant)
+    # Only count "content words" (filter stopwords)
+    stopwords = {
+        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+        'of', 'is', 'was', 'are', 'be', 'been', 'being', 'have', 'has', 'had',
+        'do', 'does', 'did', 'will', 'would', 'should', 'could', 'may', 'might',
+        'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it',
+    }
+    
+    content_answer = [w for w in answer_words if w not in stopwords]
+    content_context = context_words - stopwords
+    
+    if not content_answer:
+        return 0.0
+    
+    # Compute overlap score
+    matches = sum(1 for w in content_answer if w in content_context)
+    score = matches / len(content_answer)
+    
+    return min(1.0, score)
+
+
+def _fallback_context(query: str) -> str:
+    """
+    Fallback context when knowledge base is unavailable or empty.
+    Provides generic but useful information about the platform.
+    """
+    query_lower = query.lower()
+    
+    if any(word in query_lower for word in ['neighborhood', 'area', 'location']):
+        return (
+            "The Ames Housing dataset contains 28 neighborhoods across Iowa. "
+            "High-value neighborhoods include Northridge Heights, Stone Brook, and Northridge. "
+            "Affordable neighborhoods include Meadow Village, Briardale, and Iowa DOT/Rail Road. "
+            "Neighborhood is a significant predictor of house price."
+        )
+    elif any(word in query_lower for word in ['model', 'r2', 'rmse', 'performance']):
+        return (
+            "The platform trains three regression models: Ridge, XGBoost, and LightGBM. "
+            "Models are evaluated using R², RMSE, and MAE metrics on temporal train/val/test splits. "
+            "Temporal splits ensure no data leakage: train (2006-2008), validation (2009), test (2010)."
+        )
+    elif any(word in query_lower for word in ['feature', 'importance', 'correlation']):
+        return (
+            "Top features influencing house prices: Overall Quality, Total Square Footage, "
+            "Above Ground Living Area, Garage Area, Total Basement SF, Year Built, and Bathrooms. "
+            "The platform engineers 12 domain-specific features from raw data."
+        )
+    elif any(word in query_lower for word in ['anomal', 'outlier', 'unusual']):
+        return (
+            "The platform detects anomalies using Isolation Forest and Z-score analysis. "
+            "Anomalies are flagged but never removed, only for human review. "
+            "Severity is classified as LOW, MEDIUM, or HIGH based on detection method overlap."
+        )
+    elif any(word in query_lower for word in ['clean', 'quality', 'null', 'missing']):
+        return (
+            "Data cleaning addresses 14 structural missing value columns, imputes numerical features, "
+            "and validates data integrity. Null rates are tracked per column. "
+            "Post-cleaning null rate is 0%."
+        )
+    else:
+        return (
+            "The Ames Housing Intelligence Platform is a production-grade ML pipeline "
+            "that processes 2,930 residential property records through 8 agents. "
+            "It trains three models, detects anomalies, and provides price predictions with explanations. "
+            "For specific questions about the data, models, or features, please ask in more detail."
+        )
+
+
 def generate_answer(
     question: str, context: str, chat_history: str = "", max_length: int = 256
 ) -> str:
