@@ -29,11 +29,13 @@ class EventBus:
     - SSE subscribers get events via async generator
     """
 
-    def __init__(self):
+    def __init__(self, max_history_per_run: int = 500, max_total_runs: int = 50):
         self._connections: Dict[str, List[WebSocket]] = defaultdict(list)
         self._history: Dict[str, List[AgentEvent]] = defaultdict(list)
         self._subscribers: Dict[str, List[asyncio.Queue]] = defaultdict(list)
         self._lock = asyncio.Lock()
+        self.max_history_per_run = max_history_per_run
+        self.max_total_runs = max_total_runs
 
     async def connect(self, run_id: str, websocket: WebSocket) -> None:
         """Accept a WebSocket connection and replay all past events for this run."""
@@ -60,12 +62,19 @@ class EventBus:
     async def emit(self, event: AgentEvent) -> None:
         """
         Broadcast an event to all connected WebSocket clients and SSE subscribers.
-        Called by agents during execution.
+        Called by agents during execution. Maintains bounded history.
         """
         run_id = event.run_id
 
-        # Store in history
+        # Store in history with FIFO eviction per run
         self._history[run_id].append(event)
+        if len(self._history[run_id]) > self.max_history_per_run:
+            self._history[run_id].pop(0)
+        
+        # Trim old runs if too many accumulated
+        if len(self._history) > self.max_total_runs:
+            oldest_run = min(self._history.keys(), key=lambda r: self._history[r][0].timestamp if self._history[r] else datetime.utcnow())
+            del self._history[oldest_run]
 
         event_json = event.model_dump_json()
 
@@ -149,6 +158,15 @@ class EventBus:
                 self._subscribers[run_id].remove(queue)
             except ValueError:
                 pass
+
+    def clear_run(self, run_id: str) -> None:
+        """Clear all history for a specific run (for cleanup)."""
+        if run_id in self._history:
+            del self._history[run_id]
+        if run_id in self._connections:
+            del self._connections[run_id]
+        if run_id in self._subscribers:
+            del self._subscribers[run_id]
 
     def get_history(self, run_id: str) -> List[AgentEvent]:
         """Get all events for a given run."""

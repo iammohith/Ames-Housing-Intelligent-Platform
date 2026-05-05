@@ -33,6 +33,10 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting Ames Housing API...")
     cleanup_task = None
     try:
+        # Validate environment and config (fail-fast)
+        from core.startup import validate_environment
+        validate_environment()
+        
         # Verify event bus is ready
         event_bus_health = event_bus._history  # Simple health check
         logger.info("✓ Event bus initialized")
@@ -138,27 +142,47 @@ async def timing_middleware(request: Request, call_next):
 @app.websocket("/ws/pipeline/{run_id}")
 async def pipeline_websocket(websocket: WebSocket, run_id: str):
     await event_bus.connect(run_id, websocket)
+    keepalive_task = None
     try:
-        # Use WebSocket ping message with proper AgentEvent format to avoid client parsing errors
-        # Keep-alive must be distinguishable from regular events
+        # Keepalive task to prevent connection timeout
+        async def send_keepalive():
+            while True:
+                try:
+                    await asyncio.sleep(25)
+                    # Send proper JSON event (client expects this format)
+                    ping_event = AgentEvent(
+                        run_id=run_id,
+                        agent="event_bus",
+                        status=AgentStatus.PROGRESS,
+                        message="[keepalive]",
+                        timestamp=datetime.utcnow(),
+                    )
+                    await websocket.send_text(ping_event.model_dump_json())
+                except Exception:
+                    break
+        
+        keepalive_task = asyncio.create_task(send_keepalive())
+        
+        # Listen for client messages (optional pong)
         while True:
-            await asyncio.sleep(30)
             try:
-                # Send proper ping event that client expects
-                ping_event = {
-                    "run_id": run_id,
-                    "agent": "event_bus",
-                    "status": "PROGRESS",
-                    "message": "",
-                    "timestamp": datetime.utcnow().isoformat(),
-                }
-                await websocket.send_json(ping_event)
+                data = await websocket.receive_text()
+                # Client may send pong/ping for diagnostics; ignore
+                if not data.startswith("{"):
+                    continue
+            except WebSocketDisconnect:
+                break
             except Exception:
-                # Connection closed, will be handled by disconnect
                 break
     except WebSocketDisconnect:
-        await event_bus.disconnect(run_id, websocket)
-    except Exception:
+        pass
+    finally:
+        if keepalive_task:
+            keepalive_task.cancel()
+            try:
+                await keepalive_task
+            except asyncio.CancelledError:
+                pass
         await event_bus.disconnect(run_id, websocket)
 
 
