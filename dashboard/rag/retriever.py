@@ -80,7 +80,7 @@ def retrieve_context(query: str, top_k: int = 5) -> str:
 
         # If specific intent with HIGH confidence, fetch documents of that intent
         intent_docs = []
-        if confidence > 0.5 and intent != "general" and intent in INTENT_TO_TITLES:
+        if confidence > 0.3 and intent != "general" and intent in INTENT_TO_TITLES:
             titles = INTENT_TO_TITLES[intent]
             # Fetch all documents and filter by title in Python
             # (ChromaDB where filters can be unreliable across versions)
@@ -112,7 +112,11 @@ def retrieve_context(query: str, top_k: int = 5) -> str:
             logger.warning(f"No dense results for query. Returning fallback.")
             return _fallback_context(query)
         
-        dense_docs.extend(intent_docs)
+        # When intent docs are found, prepend them so they rank highest in RRF/MMR.
+        # Appending (as before) let cosine-similar but wrong docs win.
+        if intent_docs:
+            dense_docs = intent_docs + [d for d in dense_docs if d not in intent_docs]
+        
 
         # 2. BM25 Keyword Retrieval
         all_docs_results = collection.get()

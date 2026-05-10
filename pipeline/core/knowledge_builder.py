@@ -190,13 +190,13 @@ class KnowledgeBuilder:
         text = "Feature Manifest\n\n12 engineered features:\n"
         text += "- TotalSF: Total square footage (basement + 1st + 2nd floor)\n"
         text += "- PorchSF: Combined porch/deck area\n"
-        text += "- HouseAge: Years since built (relative to sale year). Older houses command lower prices; each additional decade of age reduces median sale price by approximately 5-8%.\n"
-        text += "- RemodAge: Years since last remodel. A recent remodel significantly offsets the age penalty, recovering 30-50% of value lost to age.\n"
-        text += "- GarageAge: Years since garage built\n"
+        text += "- HouseAge: Age of the home in years (YrSold minus YearBuilt). Older properties command lower prices; each additional decade reduces median sale price by approximately 5-8%.\n"
+        text += "- RemodAge: Age since last renovation (YrSold minus YearRemodAdd). A recent remodel offsets the age penalty, recovering 30-50% of value.\n"
+        text += "- GarageAge: Age of the garage\n"
         text += "- TotalBathrooms: Full + half baths combined\n"
         text += "- HasPool, HasGarage, HasBasement, HasFireplace, IsNew: Binary flags\n"
-        text += "- OverallScore: Quality × Condition interaction\n"
-        text += "\nHouse age negatively correlates with sale price. The engineered HouseAge feature (YrSold minus YearBuilt) shows that newer homes command a significant premium, while remodels (YearRemodAdd) can partially offset the age penalty."
+        text += "- OverallScore: Quality x Condition interaction\n"
+        text += "\nOlder properties negatively correlate with sale price. The HouseAge feature shows that newer construction commands a significant premium, while renovations can partially offset that penalty."
         return text
 
     def _gen_market_segments(self, results) -> str:

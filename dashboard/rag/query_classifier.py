@@ -93,14 +93,22 @@ INTENT_PATTERNS = {
         "keywords": [
             "year", "month", "time", "trend", "season", "seasonal",
             "2006", "2007", "2008", "2009", "2010", "historical",
-            "time series", "temporal", "over time", "forecast"
+            "time series", "temporal", "over time", "forecast",
+            "sales", "most", "highest", "lowest", "transactions", "volume",
+            "market", "home sales", "housing crisis", "peak", "worst year",
+            "best year", "when", "period", "annual", "quarterly"
         ],
         "patterns": [
             r"(?:trend|temporal|over time).*(?:analysis|change|pattern)",
             r"(?:2006|2007|2008|2009|2010).*(?:price|trend|sales)",
             r"(?:seasonal|monthly|yearly).*(?:pattern|trend|variation)",
+            r"which year.*(?:most|highest|lowest|worst|best|peak)",
+            r"(?:most|highest|lowest|worst|best).*(?:sales|transactions|volume|homes|home sales)",
+            r"(?:when|what year).*(?:most|peak|highest|lowest|worst|best).*(?:sale|home|house|market)",
+            r"year.*(?:most|highest|lowest|best|worst).*(?:home|sale|transaction)",
+            r"(?:home sales|housing sales).*(?:year|when|peak|most|highest)",
         ],
-        "weight": 1.0,
+        "weight": 1.5,
     },
 }
 
@@ -122,30 +130,34 @@ def classify_query(query: str) -> Tuple[QueryIntent, float]:
     
     scores: Dict[str, float] = {intent: 0.0 for intent in INTENT_PATTERNS.keys()}
     
-    # Keyword matching (count-based)
+    # Keyword matching (count-based, weighted by intent)
     for intent, config in INTENT_PATTERNS.items():
         keyword_score = 0
         for keyword in config["keywords"]:
             if keyword in q_lower:
                 keyword_score += 1
-        scores[intent] += keyword_score * 0.4  # 40% weight for keywords
-    
-    # Pattern matching (regex-based)
+        weight = config.get("weight", 1.0)
+        scores[intent] += (keyword_score / max(len(config["keywords"]), 1)) * 0.4 * weight
+
+    # Pattern matching (regex-based, weighted by intent)
     for intent, config in INTENT_PATTERNS.items():
         pattern_score = 0
         for pattern in config["patterns"]:
             if re.search(pattern, q_lower, re.IGNORECASE):
                 pattern_score += 1
-        scores[intent] += pattern_score * 0.6  # 60% weight for patterns
-    
+        weight = config.get("weight", 1.0)
+        scores[intent] += (pattern_score / max(len(config["patterns"]), 1)) * 0.6 * weight
+
     best_intent = max(scores, key=scores.get)
     max_score = scores[best_intent]
-    
+
     if max_score == 0:
         return "general", 0.0
-        
-    total_possible = (len(INTENT_PATTERNS[best_intent]["keywords"]) * 0.4 + 
-                      len(INTENT_PATTERNS[best_intent]["patterns"]) * 0.6)
-    confidence = max_score / max(total_possible, 1.0)
+
+    # Confidence = how much the winner dominates the rest (0 to 1)
+    sorted_scores = sorted(scores.values(), reverse=True)
+    runner_up = sorted_scores[1] if len(sorted_scores) > 1 else 0.0
+    # Scale based on absolute score and margin over runner-up
+    confidence = min(max_score * (1.0 + max(0, max_score - runner_up)), 1.0)
     
     return best_intent, min(confidence, 1.0)
