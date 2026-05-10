@@ -306,18 +306,18 @@ ames-housing-platform/
 │   ├── core/
 │   │   ├── dag.py
 │   │   ├── event_bus.py
+│   │   ├── feature_engineering.py
+│   │   ├── knowledge_builder.py
 │   │   ├── metrics.py
 │   │   ├── schemas.py
-│   │   ├── startup.py
-│   │   ├── feature_engineering.py
-│   │   └── knowledge_builder.py
+│   │   └── startup.py
 │   └── api/
 │       ├── main.py
 │       ├── middleware.py
 │       └── routes/
+│           ├── analytics.py
 │           ├── pipeline.py
 │           ├── predict.py
-│           ├── analytics.py
 │           └── rag.py
 ├── dashboard/
 │   ├── .streamlit/
@@ -325,18 +325,18 @@ ames-housing-platform/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── app.py
+│   ├── rebuild_kb.py
 │   ├── theme.py
 │   ├── pages/
 │   │   ├── 1_Pipeline_Monitor.py
 │   │   ├── 2_Business_Analytics.py
 │   │   └── 3_AI_Insights_Chatbot.py
-│   ├── components/
 │   └── rag/
-│       ├── retriever.py
+│       ├── conversation.py
 │       ├── generator.py
-│       ├── query_classifier.py
 │       ├── knowledge_builder.py
-│       └── conversation.py
+│       ├── query_classifier.py
+│       └── retriever.py
 ├── mlflow/
 │   └── Dockerfile
 ├── postgres/
@@ -350,8 +350,8 @@ ames-housing-platform/
     ├── conftest.py
     ├── test_agents/
     ├── test_api/
-    ├── test_rag/
-    └── test_integration/
+    ├── test_integration/
+    └── test_rag/
 ```
 ---
 
