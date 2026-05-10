@@ -255,33 +255,33 @@ User Query
     │
     ▼
 ┌──────────────────────┐
-│   Query Classifier       │  ← Intent-aware routing (regex + keyword, 6 intents)
+│   Query Classifier   │  ← Intent-aware routing (regex + keyword, 6 intents)
 └──────────────────────┘
          │                │
          │                ▼
          │   ┌────────────────────┐
-         │   │ Live DB Injection     │  ← Stateful: anomalies, R², RMSE pulled from Postgres
+         │   │ Live DB Injection  │  ← Stateful: anomalies, R², RMSE pulled from Postgres
          │   └────────────────────┘
          ▼
-┌──────────────────────┐
-│  Hybrid Retriever        │
+┌───────────────────────────┐
+│  Hybrid Retriever         │
 │  ├── Dense (all-MiniLM)   │  ← ChromaDB cosine ANN search
 │  ├── Sparse (BM25)        │  ← Term-frequency exact matching
 │  └── RRF Fusion           │  ← Reciprocal Rank Fusion merges both lists
-└──────────────────────┘
+└───────────────────────────┘
          │
          ▼
-┌──────────────────────┐
+┌──────────────────────────┐
 │  Semantic MMR Reranker   │  ← Maximal Marginal Relevance — diversity optimization
-└──────────────────────┘
+└──────────────────────────┘
          │
          ▼
-┌──────────────────────┐
+┌──────────────────────────┐
 │  FLAN-T5-base Generator  │  ← Instruction-tuned, strictly fact-extractive prompt
 │  + Grounding Scorer      │  ← TF-IDF Jaccard overlap scoring (0.0–1.0)
 │  + LLM-as-a-Judge        │  ← Self-critique loop: model verifies its own answer
 │  + Cosine Fallback       │  ← SentenceTransformer semantic extraction if score < 0.35
-└──────────────────────┘
+└──────────────────────────┘
          │
          ▼
      Grounded Answer
