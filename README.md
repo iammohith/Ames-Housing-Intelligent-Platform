@@ -369,76 +369,105 @@ A random split would let the model see 2010 properties during training — that'
 
 ## 📁 Repository Structure
 
-
 ```
 ames-housing-platform/
-├── docker-compose.yml
 ├── .env.example
+├── .gitignore
+├── LICENSE
 ├── README.md
+├── dashboard/
+│   ├── Dockerfile
+│   ├── __init__.py
+│   ├── app.py
+│   ├── data/
+│   ├── pages/
+│   │   ├── 1_Pipeline_Monitor.py
+│   │   ├── 2_Business_Analytics.py
+│   │   └── 3_AI_Insights_Chatbot.py
+│   ├── rag/
+│   │   ├── __init__.py
+│   │   ├── conversation.py
+│   │   ├── generator.py
+│   │   ├── knowledge_builder.py
+│   │   ├── query_classifier.py
+│   │   └── retriever.py
+│   ├── rebuild_kb.py
+│   ├── requirements.txt
+│   └── theme.py
 ├── data/
 │   └── AmesHousing.csv
+├── docker-compose.yml
+├── grafana/
+│   ├── dashboards/
+│   │   ├── dashboards.yml
+│   │   ├── data-quality.json
+│   │   ├── model-performance.json
+│   │   └── pipeline-health.json
+│   └── datasources/
+│       └── prometheus.yml
+├── mlflow/
+│   └── Dockerfile
 ├── pipeline/
 │   ├── Dockerfile
-│   ├── requirements.txt
+│   ├── __init__.py
 │   ├── agents/
-│   │   ├── base_agent.py
-│   │   ├── ingestion_agent.py
-│   │   ├── schema_agent.py
-│   │   ├── cleaning_agent.py
-│   │   ├── feature_agent.py
-│   │   ├── encoding_agent.py
+│   │   ├── __init__.py
 │   │   ├── anomaly_agent.py
+│   │   ├── base_agent.py
+│   │   ├── cleaning_agent.py
+│   │   ├── encoding_agent.py
+│   │   ├── feature_agent.py
+│   │   ├── ingestion_agent.py
 │   │   ├── ml_agent.py
-│   │   └── orchestration_agent.py
+│   │   ├── orchestration_agent.py
+│   │   └── schema_agent.py
+│   ├── api/
+│   │   ├── __init__.py
+│   │   ├── main.py
+│   │   ├── middleware.py
+│   │   └── routes/
+│   │       ├── __init__.py
+│   │       ├── analytics.py
+│   │       ├── pipeline.py
+│   │       ├── predict.py
+│   │       └── rag.py
 │   ├── core/
+│   │   ├── __init__.py
 │   │   ├── dag.py
 │   │   ├── event_bus.py
 │   │   ├── feature_engineering.py
 │   │   ├── knowledge_builder.py
 │   │   ├── metrics.py
 │   │   ├── schemas.py
-│   │   └── startup.py
-│   └── api/
-│       ├── main.py
-│       ├── middleware.py
-│       └── routes/
-│           ├── analytics.py
-│           ├── pipeline.py
-│           ├── predict.py
-│           └── rag.py
-├── dashboard/
-│   ├── .streamlit/
-│   │   └── config.toml
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── app.py
-│   ├── rebuild_kb.py
-│   ├── theme.py
-│   ├── pages/
-│   │   ├── 1_Pipeline_Monitor.py
-│   │   ├── 2_Business_Analytics.py
-│   │   └── 3_AI_Insights_Chatbot.py
-│   └── rag/
-│       ├── conversation.py
-│       ├── generator.py
-│       ├── knowledge_builder.py
-│       ├── query_classifier.py
-│       └── retriever.py
-├── mlflow/
-│   └── Dockerfile
+│   │   ├── startup.py
+│   └── requirements.txt
 ├── postgres/
 │   └── init.sql
 ├── prometheus/
 │   └── prometheus.yml
-├── grafana/
-│   ├── dashboards/
-│   └── datasources/
 └── tests/
+    ├── __init__.py
     ├── conftest.py
     ├── test_agents/
+    │   ├── __init__.py
+    │   ├── test_anomaly.py
+    │   ├── test_cleaning.py
+    │   ├── test_encoding.py
+    │   ├── test_features.py
+    │   ├── test_ingestion.py
+    │   ├── test_ml.py
+    │   └── test_schema.py
     ├── test_api/
+    │   ├── __init__.py
+    │   ├── test_pipeline_endpoints.py
+    │   └── test_predict_endpoint.py
     ├── test_integration/
+    │   ├── __init__.py
+    │   └── test_full_pipeline.py
     └── test_rag/
+        ├── __init__.py
+        ├── test_generator.py
+        └── test_retriever.py
 ```
 ---
 
