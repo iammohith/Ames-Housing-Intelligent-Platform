@@ -33,9 +33,11 @@ services:
 
   # ── Experiment Tracking ───────────────────────────────────────────────────
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.11.0
+    build:
+      context: ./mlflow
+      dockerfile: Dockerfile
     command: >
-      sh -c "pip install --no-cache-dir psycopg2-binary && mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri postgresql://ames:${POSTGRES_PASSWORD:-changeme}@postgres/ames_platform --default-artifact-root /mlflow/artifacts"
+      mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri postgresql://ames:${POSTGRES_PASSWORD:-changeme}@postgres/ames_platform --default-artifact-root /mlflow/artifacts --gunicorn-opts='--timeout=300 --workers=2 --worker-class=sync --max-requests=1000'
     ports:
       - "5001:5000"
     volumes:
@@ -44,11 +46,11 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:5000/api/2.0/mlflow/version"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/').read()"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 60s
     restart: unless-stopped
 
   # ── Pipeline Backend (FastAPI + WebSocket Hub + All 8 Agents) ─────────────
@@ -108,6 +110,7 @@ services:
       STREAMLIT_SERVER_PORT: "8501"
       STREAMLIT_SERVER_ADDRESS: "0.0.0.0"
     volumes:
+      - ./dashboard:/app
       - ./data:/app/data:ro
       - pipeline_artifacts:/app/artifacts
       - chroma_data:/app/chroma
