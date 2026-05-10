@@ -40,7 +40,7 @@ flowchart TD
     A6 & A7 --> A8[Orchestration<br/>+Knowledge Build]
     A8 --> PG[(PostgreSQL<br/>metadata)]
     A7 --> MLF[MLflow<br/>Model Registry]
-    A8 --> KB[Knowledge Builder<br/>1147 chunks]
+    A8 --> KB[Knowledge Builder<br/>10 semantic chunks]
     KB --> CDB[(ChromaDB<br/>vectors)]
     PG & MLF & CDB --> DASH[Streamlit Dashboard<br/>localhost:8080]
     DASH --> P1[Pipeline Monitor<br/>Real-time WebSocket]
@@ -98,14 +98,17 @@ docker compose up --build
 
 ## 📊 Model Results
 
-| Model | Val RMSE | Test R² | Test MAE | MAPE |
-|-------|----------|---------|----------|------|
-| Ridge Regression | ~$24,500 | 0.882 | ~$16,900 | 10.2% |
-| **XGBoost** ⭐ | **~$19,200** | **0.921** | **~$13,800** | **8.4%** |
-| LightGBM | ~$19,800 | 0.917 | ~$14,100 | 8.6% |
+The following results are from the **last pipeline run** stored in PostgreSQL.
 
-> All models use **temporal train/val/test split** (2006-08 / 2009 / 2010) to prevent data leakage.
+| Model | Val RMSE | Test R² | Test RMSE | Test MAE | MAPE |
+|-------|----------|---------|-----------|----------|------|
+| **Ridge Regression** ⭐ | ~$20,085 | **0.925** | **$20,459** | **$14,372** | **10.3%** |
+| XGBoost | ~$20,723 | 0.920 | $21,111 | $14,254 | 10.0% |
+| LightGBM | ~$20,702 | 0.919 | $21,199 | $14,279 | 10.1% |
+
+> All models use **temporal train/val/test split** (2006–08 train / 2009 val / 2010 test) to prevent data leakage.
 > Metrics computed on **exponentiated** predictions (real dollar values), not log-space.
+> The champion model is selected by lowest Test RMSE. Results will update after each pipeline run.
 
 ---
 
@@ -208,7 +211,8 @@ MLFLOW_EXPERIMENT_NAME=ames-housing
 | ML Training | Scikit-learn, XGBoost, LightGBM | Industry standard, fully open |
 | Experiment tracking | MLflow (self-hosted) | Best OSS experiment tracker |
 | RAG — LLM | google/flan-t5-base | 250M params, CPU-only, baked into Docker image |
-| RAG — Embeddings | all-MiniLM-L6-v2 | 90MB, CPU-only, baked into image |
+| RAG — Embeddings | sentence-transformers/all-MiniLM-L6-v2 | 90MB, CPU-only, baked into image |
+| RAG — Tokenizer | sentencepiece | Required by T5Tokenizer; baked into image |
 | RAG — Vector store | ChromaDB (in-process) | No separate container, file-persisted |
 | API Backend | FastAPI | Async, OpenAPI auto-generated, WebSocket native |
 | Database | PostgreSQL | Pipeline metadata, anomaly logs, run history |
@@ -231,30 +235,111 @@ Each agent implements a `BaseAgent` abstract class with:
 | 2 | **Schema** | Fuzzy column matching, type classification, drift detection | Confidence: 0.97 |
 | 3 | **Cleaning** | 14 structural NA fills, imputation, artifact flagging | 0 nulls, 2,927 rows |
 | 4 | **Features** | 12 domain features with business rationale | TotalSF r=0.78 |
-| 5 | **Encoding** | Ordinal/target/OHE encoding, log-transforms, RobustScaler | 128 features |
-| 6 | **Anomaly** | Isolation Forest + Z-score, severity classification | ~63 flagged (2.15%) |
-| 7 | **ML Training** | Ridge/XGBoost/LightGBM, SHAP, MLflow tracking | R²=0.921 |
-| 8 | **Orchestration** | DAG execution, knowledge base building, audit trail | 1,147 KB chunks |
+| 5 | **Encoding** | Ordinal/target/OHE encoding, log-transforms, RobustScaler | 125 features |
+| 6 | **Anomaly** | Isolation Forest + Z-score, severity classification | 78 flagged (2.7%) |
+| 7 | **ML Training** | Ridge/XGBoost/LightGBM, SHAP, MLflow tracking | R²=0.925 (Ridge) |
+| 8 | **Orchestration** | DAG execution, knowledge base building, audit trail | 10 semantic KB chunks |
 
 > Agents 6 and 7 run **in parallel** — anomaly detection and ML training have no dependency on each other.
 
 ---
 
-## 🧠 AI Chatbot (Agentic RAG)
+## 🧠 Agentic RAG System
 
-The MAANG-grade RAG chatbot runs **entirely offline** inside the dashboard container, utilizing an advanced multi-step retrieval and verification architecture:
+> A fully offline, production-grade Retrieval-Augmented Generation (RAG) pipeline embedded inside the Streamlit dashboard. Zero internet dependency at runtime. Zero API keys. No OpenAI, no LangChain Cloud, no external vector database.
 
-1. **Intent Routing**: User queries are classified to actively boost metadata across specific pipeline reports.
-2. **Hybrid Retrieval**: Merges dense vector embeddings (`all-MiniLM-L6-v2`) with an Okapi BM25 sparse index via Reciprocal Rank Fusion (RRF).
-3. **Semantic MMR Diversity**: Applies cosine distance optimization to ensure retrieved context is information-diverse and non-redundant.
-4. **Conversational Memory**: The UI statefully parses chat history to the generator for seamless contextual follow-ups.
-5. **Agentic Verification**: `flan-t5-base` generates the answer. An **LLM-as-a-judge** verification layer evaluates the grounding score and runs a secondary self-critique to prevent hallucinations.
+### Architecture Overview
 
-### Example Questions
-- "Which neighborhoods have the highest average sale prices?"
-- "What are the top 3 features that most influence house prices?"
-- "How many anomalies were detected in the last pipeline run?"
-- "What was the model's R² score on the 2010 test set?"
+```
+User Query
+    │
+    ▼
+┌──────────────────────┐
+│   Query Classifier       │  ← Intent-aware routing (regex + keyword, 6 intents)
+└──────────────────────┘
+         │                │
+         │                ▼
+         │   ┌────────────────────┐
+         │   │ Live DB Injection     │  ← Stateful: anomalies, R², RMSE pulled from Postgres
+         │   └────────────────────┘
+         ▼
+┌──────────────────────┐
+│  Hybrid Retriever        │
+│  ├── Dense (all-MiniLM)   │  ← ChromaDB cosine ANN search
+│  ├── Sparse (BM25)        │  ← Term-frequency exact matching
+│  └── RRF Fusion           │  ← Reciprocal Rank Fusion merges both lists
+└──────────────────────┘
+         │
+         ▼
+┌──────────────────────┐
+│  Semantic MMR Reranker   │  ← Maximal Marginal Relevance — diversity optimization
+└──────────────────────┘
+         │
+         ▼
+┌──────────────────────┐
+│  FLAN-T5-base Generator  │  ← Instruction-tuned, strictly fact-extractive prompt
+│  + Grounding Scorer      │  ← TF-IDF Jaccard overlap scoring (0.0–1.0)
+│  + LLM-as-a-Judge        │  ← Self-critique loop: model verifies its own answer
+│  + Cosine Fallback       │  ← SentenceTransformer semantic extraction if score < 0.35
+└──────────────────────┘
+         │
+         ▼
+     Grounded Answer
+```
+
+### Retrieval Pipeline — Engineering Details
+
+| Component | Implementation | Design Rationale |
+|-----------|---------------|------------------|
+| **Embedding model** | `sentence-transformers/all-MiniLM-L6-v2` (90 MB, CPU-only) | Baked into Docker image; zero network calls at inference |
+| **Vector store** | ChromaDB persistent client (`/app/chroma`) | In-process, no separate container or network socket needed |
+| **Sparse retriever** | Okapi BM25 over all chunk texts | Complements dense retrieval for exact terminology (e.g., `RMSE`, `Isolation Forest`) |
+| **Rank fusion** | Reciprocal Rank Fusion (RRF, k=60) | Provably optimal fusion without requiring score normalization |
+| **Reranking** | Semantic MMR with cosine distance | Enforces result diversity — prevents returning 5 nearly-identical chunks |
+| **Intent classifier** | Regex + weighted keyword scoring across 6 intents | Routes queries to domain-specific metadata filters |
+| **Stateful injection** | REST call to `orchestration-api:8000/api/latest-metrics` | Pulls live R², RMSE, anomaly counts directly from Postgres for zero-hallucination on metrics |
+| **Chunking strategy** | Sentence-boundary splitting, max 180 words/chunk | Prevents silent truncation within FLAN-T5’s 512-token context window |
+
+### Generation Pipeline — Engineering Details
+
+| Stage | Mechanism | Effect |
+|-------|-----------|--------|
+| **Context processing** | Regex stripping of `[Source:]` tags and citation metadata | Prevents context pollution and formatting artifacts from confusing the 250M parameter LLM |
+| **Prompt format** | Strict extraction template: `Facts: ... Question: ... Answer:` | Forces FLAN-T5 into extractive QA mode, preventing generative hallucination |
+| **Grounding score** | Jaccard overlap of content words (stopwords filtered) | Quantifies how much of the answer is verifiable directly in the context |
+| **LLM-as-a-judge** | Secondary FLAN-T5 call: `YES/NO — is this answer supported by context?` | Self-critique loop rejects ungrounded answers before returning to user |
+| **Extractive fallback** | `all-MiniLM-L6-v2` cosine similarity across context sentences | Mathematical guarantee: extracts highest-scoring sentence when generation fails. Uses negative lookbehind `(?<!\b\d)` to correctly parse numbered lists without fragmenting. |
+| **Hallucination markers** | Regex filter for uncertainty hedges (`probably`, `might be`) | Catches soft hallucinations that pass grounding score but signal model uncertainty |
+
+### Offline & Privacy-Preserving Architecture
+
+All inference components run **air-gapped** inside Docker:
+- **FLAN-T5-base** (250M params): baked into the image during `docker build` via `RUN python -c "AutoModelForSeq2SeqLM.from_pretrained(...)"` — no runtime downloads
+- **all-MiniLM-L6-v2**: pre-downloaded to `/app/model_cache` at build time via `SentenceTransformer(...)`
+- **ChromaDB**: file-persisted at `/app/chroma` — survives container restarts
+- `TRANSFORMERS_OFFLINE=0` is set but the model is already cached — network is never consulted at inference
+
+This makes the system suitable for **air-gapped enterprise environments**, **privacy-sensitive deployments**, and **offline demo scenarios** where external API calls are prohibited.
+
+### Integration with the 8-Agent ML Platform
+
+The RAG system is not a standalone chatbot — it is a **first-class consumer of the ML pipeline**:
+
+- **Agent 8 (Orchestration)** calls `KnowledgeBuilder.build()` at the end of each pipeline run, generating semantic documents from ML artifacts (model metrics, anomaly reports, feature importances, neighborhood stats) and indexing them into ChromaDB
+- The dashboard RAG reads from the **same ChromaDB volume** shared via Docker — no copy, no sync needed
+- Live queries about pipeline state bypass the vector store entirely and read directly from PostgreSQL via the orchestration API, ensuring the chatbot always reflects the **current run’s state**, not stale indexed text
+- The knowledge base is **rebuild-able on demand** via `POST /api/rebuild-knowledge-base` without restarting any container
+
+### Example Queries by Intent Class
+
+| Intent | Example Query |
+|--------|---------------|
+| `temporal` | "Which year had the lowest transaction volume?" |
+| `model_performance` | "What is the champion model’s R² and RMSE on the test set?" |
+| `anomaly` | "How many anomalies were detected in the last pipeline run?" |
+| `neighborhood` | "Which neighborhoods are in the luxury price tier?" |
+| `feature` | "What are the top 5 features that drive sale price?" |
+| `data_quality` | "How were missing LotFrontage values handled?" |
 
 ---
 
@@ -268,15 +353,17 @@ A random split would let the model see 2010 properties during training — that'
 
 ### Known Limitations
 - Target encoding has leakage risk if folds aren't handled correctly
-- flan-t5-base answers are brief and sometimes generic
+- `flan-t5-base` answers are brief on complex multi-step reasoning questions
 - Luxury property RMSE is ~2× mid-market (thin data at extremes)
 - WebSocket requires the browser to allow `ws://` (not `wss://`) on localhost
+- `sentencepiece` must be present at container start (now baked into `requirements.txt`)
 
 ### Future Improvements (ranked by ROI)
-1. Larger local LLM (flan-t5-large) for better RAG answers
+1. Larger local LLM (flan-t5-large or Mistral-7B quantized) for richer RAG answers
 2. Automated retraining triggered by schema drift detection
-3. Prediction confidence calibration using conformal prediction
-4. HTTPS/TLS for production deployment
+3. SHAP waterfall plots rendered directly in the AI Chatbot answer
+4. Prediction confidence calibration using conformal prediction
+5. HTTPS/TLS for production deployment
 
 ---
 
