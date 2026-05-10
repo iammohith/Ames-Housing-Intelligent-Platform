@@ -20,6 +20,8 @@ An end-to-end ML platform that processes the **Ames Housing dataset** (2,930 pro
 - **Full observability** — Prometheus metrics, Grafana dashboards, structured logging
 - **Production patterns** — retry logic, schema drift detection, anomaly flagging, experiment tracking
 
+**100% Offline Capability**: All ML models (flan-t5, sentence-transformers) are pre-downloaded during the Docker build phase. Once built, you can disconnect from the internet and the platform will run flawlessly without ever attempting an external network request.
+
 **No API keys. No cloud accounts. No internet after build.**
 
 ---
@@ -45,7 +47,8 @@ flowchart TD
     DASH --> P2[Business Analytics<br/>Interactive Plotly]
     DASH --> P3[AI Chatbot<br/>flan-t5-base RAG]
     style A7 fill:#002A1A,stroke:#00FF9C
-    style P1 fill:#0A2A4A,stroke:#4D9EFF
+    style DASH fill:#FFFFFF,stroke:#2563EB,color:#0F172A
+    style P1 fill:#F4F7FB,stroke:#E2E8F0,color:#0F172A
 ```
 
 ---
@@ -83,8 +86,8 @@ docker compose up --build
 
 | Interface | URL | Description |
 |-----------|-----|-------------|
-| **Dashboard** | http://localhost:8501 | All 3 views — start here |
-| **MLflow** | http://localhost:5000 | Experiment tracker + model registry |
+| **Dashboard** | http://localhost:8080 | All 3 views — start here |
+| **MLflow** | http://localhost:5001 | Experiment tracker + model registry |
 | **Grafana** | http://localhost:3001 | System + pipeline metrics (admin/admin) |
 | **API Docs** | http://localhost:8000/docs | FastAPI OpenAPI interactive documentation |
 | **Prometheus** | http://localhost:9090 | Metrics explorer + PromQL queries |
@@ -166,10 +169,10 @@ GET   /docs                           FastAPI auto-generated OpenAPI UI
 | # | Service | Image | Port | Purpose |
 |---|---------|-------|------|---------|
 | 1 | **postgres** | postgres:15-alpine | — | Pipeline metadata, anomaly logs, run history (6 tables) |
-| 2 | **redis** | redis:7-alpine | — | Task queue for async pipeline execution |
+| 2 | **redis** | redis:7-alpine | — | Cache layer for session state and task coordination |
 | 3 | **mlflow** | mlflow:v2.11.0 | 5001 | Experiment tracking + model registry |
 | 4 | **orchestration-api** | Custom (Python 3.11) | 8000 | FastAPI + WebSocket hub + all 8 agents |
-| 5 | **dashboard** | Custom (Python 3.11) | 8080 | Streamlit + React + embedded RAG (flan-t5 baked in) |
+| 5 | **dashboard** | Custom (Python 3.11) | 8080 | Streamlit + embedded RAG (flan-t5 baked in) |
 | 6 | **prometheus** | prom/prometheus:v2.50 | 9090 | Metrics collection (15-day retention) |
 | 7 | **grafana** | grafana:10.3.0 | 3001 | 3 auto-provisioned dashboards |
 
@@ -200,7 +203,7 @@ MLFLOW_EXPERIMENT_NAME=ames-housing
 | Layer | Technology | Justification |
 |-------|-----------|---------------|
 | Real-time comms | FastAPI WebSockets + SSE | Native async, no socket.io overhead |
-| Frontend | Streamlit + React components | Dynamic DOM updates via custom components |
+| Frontend UI | Streamlit + Custom TOML | MAANG-level Soft UI (White/Blue aesthetic) |
 | Pipeline | Custom async DAG (asyncio) | No Airflow overhead for single-dataset platform |
 | ML Training | Scikit-learn, XGBoost, LightGBM | Industry standard, fully open |
 | Experiment tracking | MLflow (self-hosted) | Best OSS experiment tracker |
@@ -305,6 +308,7 @@ ames-housing-platform/
 │   │   ├── event_bus.py
 │   │   ├── metrics.py
 │   │   ├── schemas.py
+│   │   ├── startup.py
 │   │   ├── feature_engineering.py
 │   │   └── knowledge_builder.py
 │   └── api/
@@ -316,33 +320,30 @@ ames-housing-platform/
 │           ├── analytics.py
 │           └── rag.py
 ├── dashboard/
+│   ├── .streamlit/
+│   │   └── config.toml
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── app.py
+│   ├── theme.py
 │   ├── pages/
 │   │   ├── 1_Pipeline_Monitor.py
 │   │   ├── 2_Business_Analytics.py
 │   │   └── 3_AI_Insights_Chatbot.py
 │   ├── components/
-│   │   └── live_dag/
-│   │       ├── package.json
-│   │       └── src/
-│   │           ├── LiveDAG.jsx
-│   │           ├── AgentNode.jsx
-│   │           ├── EdgeAnimator.jsx
-│   │           └── websocket.js
 │   └── rag/
 │       ├── retriever.py
 │       ├── generator.py
 │       ├── query_classifier.py
-│       ├── conversation.py
-│       └── knowledge_builder.py
+│       ├── knowledge_builder.py
+│       └── conversation.py
+├── mlflow/
+│   └── Dockerfile
 ├── postgres/
 │   └── init.sql
 ├── prometheus/
 │   └── prometheus.yml
 ├── grafana/
-│   ├── generate_dashboards.py
 │   ├── dashboards/
 │   └── datasources/
 └── tests/
@@ -357,13 +358,17 @@ ames-housing-platform/
 ## 🧪 Testing
 
 ```bash
+# Tests run locally (they use a mocked environment so Docker is not required)
+# First, ensure you have the test dependencies installed in your local environment:
+# pip install pytest pytest-asyncio pytest-cov httpx pandas numpy scikit-learn structlog pydantic
+
 # Run all tests
-docker compose exec orchestration-api pytest tests/ -v --cov=pipeline --cov-report=term-missing
+pytest tests/ -v --cov=pipeline --cov-report=term-missing
 
 # Run specific test suites
-docker compose exec orchestration-api pytest tests/test_agents/ -v
-docker compose exec orchestration-api pytest tests/test_api/ -v
-docker compose exec orchestration-api pytest tests/test_rag/ -v
+pytest tests/test_agents/ -v
+pytest tests/test_api/ -v
+pytest tests/test_rag/ -v
 ```
 
 ---
@@ -453,15 +458,16 @@ docker compose restart dashboard
 **Fix**:
 ```bash
 # 1. Verify pipeline has completed successfully
-curl http://localhost:8000/pipeline/status/<run_id> | jq '.agents[] | select(.name == "ml_agent")'
+curl http://localhost:8000/api/status/<run_id> | jq '.agents.ml_agent'
 
 # 2. Check model artifacts exist
 docker compose exec orchestration-api ls -lah /app/artifacts/
 
 # 3. Test with different property values
-curl -X POST http://localhost:8000/predict \
+curl -X POST http://localhost:8000/api/predict \
   -H "Content-Type: application/json" \
-  -d '{"GrLivArea": 1500, "OverallQual": 7, "YearBuilt": 2000}'
+  -H "X-API-Key: changeme" \
+  -d '{"gr_liv_area": 1500, "overall_qual": 7, "year_built": 2000, "total_bathrooms": 2, "neighborhood": "NAmes"}'
 ```
 
 ### Issue: Out of Memory - services get OOMKilled
@@ -487,7 +493,7 @@ curl -X POST http://localhost:8000/predict \
 curl http://localhost:9090/api/v1/targets | jq '.data.activeTargets'
 
 # 2. Trigger a pipeline run to generate metrics
-curl -X POST http://localhost:8000/pipeline/run \
+curl -X POST http://localhost:8000/api/run-pipeline \
   -H "X-API-Key: changeme" \
   -H "Content-Type: application/json" \
   -d '{}'
