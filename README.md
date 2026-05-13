@@ -621,7 +621,7 @@ Substitution is isolated by design:
 | **Cold start latency** | First query loads FLAN-T5 (~1.2 GB) + MiniLM (~90 MB) into memory | Thread-safe double-checked locking pattern prevents redundant model loads | First query pays ~5s model load penalty; no pre-warming mechanism exists |
 | **Embedding model unavailable** | Corrupted model cache or disk-full condition | Keyword-overlap fallback (`score < 2 → abstain`) ensures system never fabricates answers | Keyword fallback quality is significantly lower than semantic extraction |
 
-### What I Would Change at Large Scale
+### What I Would Change at Enterprise Scale
 
 | Current Design | Production Alternative | Why I Didn't |
 |---|---|---|
