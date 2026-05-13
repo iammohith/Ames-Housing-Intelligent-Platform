@@ -665,7 +665,7 @@ The `rank-bm25` PyPI package adds a dependency for 60 lines of code. Our impleme
 - Context truncation at 350 words may drop relevant facts for broad cross-domain queries
 
 ### Future Improvements (ranked by ROI)
-1. Larger local LLM (flan-t5-large or Mistral-7B quantized) for richer RAG answers
+1. Larger local LLM (flan-t5-large or Mistral-7B quantized) for richer Q&A answers
 2. Automated retraining triggered by schema drift detection
 3. SHAP waterfall plots rendered directly in the AI Chatbot answer
 4. Prediction confidence calibration using conformal prediction
